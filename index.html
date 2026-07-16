@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#83cffa">
+  <title>水防訓練フィールド</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <canvas id="game" aria-label="水防訓練フィールド"></canvas>
+
+  <aside class="minimap-panel" aria-label="フィールド全体ミニマップ">
+    <header>ミニマップ</header>
+    <svg class="minimap-map" id="minimapMap" viewBox="0 0 105 120" preserveAspectRatio="xMidYMid meet" role="img" aria-label="105×120ブロックのフィールドと現在地">
+      <defs>
+        <filter id="markerShadow" x="-80%" y="-80%" width="260%" height="260%">
+          <feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-color="#08263c" flood-opacity=".65"/>
+        </filter>
+      </defs>
+      <g id="minimapContent">
+        <rect id="minimapFrame" x="1" y="1" width="103" height="118" rx="3" fill="#a6c98b"/>
+        <rect id="minimapGround" x="2" y="2" width="101" height="116" rx="2" fill="#9fc783"/>
+        <g id="minimapGrid" opacity=".45"></g>
+        <g id="minimapRoads"></g>
+        <path id="minimapRiver" d="" fill="#1f91d1" opacity=".86"/>
+        <g class="minimap-house" id="minimapHouse" transform="translate(60 107.5)"></g>
+        <g id="minimapAdditionalHouses"></g>
+      </g>
+      <g class="minimap-player" id="minimapPlayer" transform="translate(75 112.5)" filter="url(#markerShadow)">
+        <circle r="4.1" fill="#ffffff" stroke="#154c72" stroke-width="1"/>
+        <path d="M0-3.2L2.6 2.7 0 1.5-2.6 2.7Z" fill="#168be0" stroke="#0b568e" stroke-width=".65"/>
+      </g>
+    </svg>
+    <footer><span><i class="player-key"></i>現在地</span><span id="minimapSizeLabel">105 × 120 blocks</span></footer>
+  </aside>
+
+  <div class="start-guide" id="startGuide">
+    <p>クリックして操作開始</p>
+    <small>WASD：移動　マウス：カメラ　Shift：走る　Space：ジャンプ</small>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
