@@ -1252,6 +1252,10 @@ function boxPart(parent, name, size, position, color) {
   return mesh;
 }
 
+function voxelTile(parent, name, x, y, z, color, scale = 1) {
+  return boxPart(parent, name, [0.036 * scale, 0.036 * scale, 0.026 * scale], [x, y, z], color);
+}
+
 function makePlayer() {
   const root = new THREE.Group();
   root.name = 'Player';
@@ -1272,15 +1276,20 @@ function makePlayer() {
   const hairLight = 0x6a4730;
 
   // Raincoat body: layered panels replace one oversized torso block.
-  boxPart(visual, 'coatCore', [0.38, 0.32, 0.23], [0, 0.55, 0], yellow);
-  boxPart(visual, 'coatShoulders', [0.46, 0.09, 0.25], [0, 0.69, 0], yellowLight);
-  boxPart(visual, 'coatSkirt', [0.46, 0.15, 0.27], [0, 0.37, 0.01], yellow);
-  boxPart(visual, 'coatHem', [0.48, 0.055, 0.285], [0, 0.30, 0.015], yellowDark);
+  boxPart(visual, 'coatCore', [0.40, 0.32, 0.30], [0, 0.55, 0.01], yellow);
+  boxPart(visual, 'coatChestVolume', [0.31, 0.22, 0.055], [0, 0.57, -0.166], yellowSoft);
+  boxPart(visual, 'coatBackVolume', [0.35, 0.30, 0.075], [0, 0.53, 0.18], yellowDark);
+  boxPart(visual, 'coatShoulders', [0.49, 0.09, 0.31], [0, 0.69, 0.01], yellowLight);
+  boxPart(visual, 'coatShoulderBackLip', [0.42, 0.055, 0.085], [0, 0.705, 0.205], yellowDark);
+  boxPart(visual, 'coatSkirt', [0.48, 0.15, 0.32], [0, 0.37, 0.02], yellow);
+  boxPart(visual, 'coatHem', [0.50, 0.055, 0.34], [0, 0.30, 0.025], yellowDark);
   boxPart(visual, 'zipper', [0.025, 0.34, 0.018], [0, 0.53, -0.126], 0xffdf55);
   boxPart(visual, 'pocketL', [0.11, 0.08, 0.025], [-0.13, 0.43, -0.137], yellowDark);
   boxPart(visual, 'pocketR', [0.11, 0.08, 0.025], [0.13, 0.43, -0.137], yellowDark);
-  boxPart(visual, 'coatSideL', [0.055, 0.26, 0.25], [-0.215, 0.50, 0], 0xd49306);
-  boxPart(visual, 'coatSideR', [0.055, 0.26, 0.25], [0.215, 0.50, 0], 0xd49306);
+  boxPart(visual, 'coatSideL', [0.07, 0.27, 0.30], [-0.225, 0.50, 0.01], 0xd49306);
+  boxPart(visual, 'coatSideR', [0.07, 0.27, 0.30], [0.225, 0.50, 0.01], 0xd49306);
+  boxPart(visual, 'coatSideBackL', [0.045, 0.21, 0.08], [-0.26, 0.49, 0.15], yellowShadow);
+  boxPart(visual, 'coatSideBackR', [0.045, 0.21, 0.08], [0.26, 0.49, 0.15], yellowLight);
   boxPart(visual, 'collarL', [0.15, 0.075, 0.04], [-0.085, 0.68, -0.14], yellowDark);
   boxPart(visual, 'collarR', [0.15, 0.075, 0.04], [0.085, 0.68, -0.14], yellowDark);
   boxPart(visual, 'chestPanelL', [0.15, 0.11, 0.024], [-0.095, 0.57, -0.137], 0xf0b708);
@@ -1295,6 +1304,23 @@ function makePlayer() {
   boxPart(visual, 'coatBackFoldL', [0.07, 0.24, 0.025], [-0.17, 0.50, 0.138], yellowShadow);
   boxPart(visual, 'coatBackFoldR', [0.07, 0.24, 0.025], [0.17, 0.50, 0.138], yellowDark);
   boxPart(visual, 'coatBackCenter', [0.035, 0.32, 0.025], [0, 0.51, 0.143], 0xf7c21b);
+  boxPart(visual, 'coatBackLowerBlockL', [0.13, 0.085, 0.05], [-0.105, 0.345, 0.195], yellowShadow);
+  boxPart(visual, 'coatBackLowerBlockR', [0.13, 0.085, 0.05], [0.105, 0.345, 0.195], yellow);
+  boxPart(visual, 'coatBackHoodShadow', [0.22, 0.055, 0.045], [0, 0.655, 0.222], yellowShadow);
+  for (let row = 0; row < 4; row++) {
+    for (let col = 0; col < 5; col++) {
+      if ((row + col) % 2 === 0) {
+        voxelTile(visual, `coatFrontPixel${row}_${col}`, -0.145 + col * 0.072, 0.625 - row * 0.073, -0.184, row % 2 ? yellowDark : yellowLight, 0.9);
+      }
+    }
+  }
+  for (let row = 0; row < 4; row++) {
+    for (let col = 0; col < 4; col++) {
+      if ((row + col) % 2 === 1) {
+        voxelTile(visual, `coatBackPixel${row}_${col}`, -0.108 + col * 0.072, 0.61 - row * 0.07, 0.232, row % 2 ? yellowShadow : yellowSoft, 0.95);
+      }
+    }
+  }
   for (let i = 0; i < 4; i++) {
     boxPart(visual, `button${i}`, [0.025, 0.025, 0.018], [0.035, 0.62 - i * 0.075, -0.151], 0x6f571c);
   }
@@ -1303,14 +1329,16 @@ function makePlayer() {
     boxPart(visual, `rightRaincoatPixel${i}`, [0.035, 0.035, 0.018], [0.07 + i * 0.045, 0.61 - i * 0.08, -0.155], i % 2 ? yellowDark : yellowLight);
   }
 
-  const head = boxPart(visual, 'head', [0.31, 0.27, 0.29], [0, 0.84, -0.01], skin);
-  boxPart(head, 'hoodTop', [0.29, 0.07, 0.33], [0, 0.135, 0.015], yellowLight);
-  boxPart(head, 'hoodTopLeft', [0.09, 0.07, 0.30], [-0.13, 0.105, 0.015], yellow);
-  boxPart(head, 'hoodTopRight', [0.09, 0.07, 0.30], [0.13, 0.105, 0.015], yellow);
-  boxPart(head, 'hoodCrown', [0.17, 0.045, 0.29], [0, 0.18, 0.015], 0xffd337);
-  boxPart(head, 'hoodLeft', [0.07, 0.22, 0.32], [-0.15, 0.01, 0.015], yellow);
-  boxPart(head, 'hoodRight', [0.07, 0.22, 0.32], [0.15, 0.01, 0.015], yellow);
-  boxPart(head, 'hoodBack', [0.31, 0.2, 0.07], [0, 0, 0.15], yellowDark);
+  const head = boxPart(visual, 'head', [0.31, 0.27, 0.31], [0, 0.84, -0.01], skin);
+  boxPart(head, 'hoodTop', [0.30, 0.07, 0.36], [0, 0.135, 0.018], yellowLight);
+  boxPart(head, 'hoodTopLeft', [0.09, 0.07, 0.33], [-0.13, 0.105, 0.018], yellow);
+  boxPart(head, 'hoodTopRight', [0.09, 0.07, 0.33], [0.13, 0.105, 0.018], yellow);
+  boxPart(head, 'hoodCrown', [0.17, 0.045, 0.32], [0, 0.18, 0.018], 0xffd337);
+  boxPart(head, 'hoodTopBackStep', [0.24, 0.045, 0.07], [0, 0.158, 0.205], yellowShadow);
+  boxPart(head, 'hoodLeft', [0.075, 0.23, 0.35], [-0.152, 0.01, 0.018], yellow);
+  boxPart(head, 'hoodRight', [0.075, 0.23, 0.35], [0.152, 0.01, 0.018], yellow);
+  boxPart(head, 'hoodBack', [0.32, 0.21, 0.09], [0, 0, 0.18], yellowDark);
+  boxPart(head, 'hoodBackBulge', [0.24, 0.14, 0.065], [0, -0.02, 0.235], yellowShadow);
   boxPart(head, 'hoodTempleL', [0.055, 0.08, 0.05], [-0.13, -0.065, -0.145], yellowDark);
   boxPart(head, 'hoodTempleR', [0.055, 0.08, 0.05], [0.13, -0.065, -0.145], yellowDark);
   boxPart(head, 'hoodEdgeTopL', [0.085, 0.035, 0.035], [-0.105, 0.125, -0.145], yellowDark);
@@ -1322,6 +1350,10 @@ function makePlayer() {
   boxPart(head, 'hoodSideTileL2', [0.035, 0.06, 0.06], [-0.18, -0.035, 0.055], yellowShadow);
   boxPart(head, 'hoodSideTileR1', [0.035, 0.06, 0.06], [0.18, 0.06, 0.00], yellowLight);
   boxPart(head, 'hoodSideTileR2', [0.035, 0.06, 0.06], [0.18, -0.035, 0.055], yellowDark);
+  for (let i = 0; i < 4; i++) {
+    voxelTile(head, `hoodTopPixel${i}`, -0.108 + i * 0.072, 0.188, -0.02 + (i % 2) * 0.062, i % 2 ? yellowLight : yellowDark, 0.85);
+    voxelTile(head, `hoodBackPixel${i}`, -0.108 + i * 0.072, 0.058 - (i % 2) * 0.06, 0.272, i % 2 ? yellowShadow : yellow, 0.9);
+  }
   boxPart(head, 'fringeL', [0.075, 0.055, 0.026], [-0.105, 0.092, -0.158], hair);
   boxPart(head, 'fringeMid', [0.065, 0.085, 0.026], [-0.035, 0.075, -0.16], hairLight);
   boxPart(head, 'fringeR', [0.07, 0.045, 0.026], [0.045, 0.095, -0.158], hair);
@@ -1352,16 +1384,20 @@ function makePlayer() {
   function makeArm(side) {
     const arm = new THREE.Group();
     arm.position.set(side * 0.285, 0.68, 0);
-    boxPart(arm, 'upperSleeve', [0.13, 0.2, 0.16], [0, -0.09, 0], yellowLight);
-    boxPart(arm, 'shoulderCap', [0.15, 0.075, 0.175], [0, 0.005, 0], yellowDark);
+    boxPart(arm, 'upperSleeve', [0.14, 0.2, 0.19], [0, -0.09, 0], yellowLight);
+    boxPart(arm, 'upperSleeveBack', [0.10, 0.17, 0.055], [0, -0.095, 0.115], yellowDark);
+    boxPart(arm, 'upperSleeveFront', [0.10, 0.14, 0.04], [0, -0.095, -0.105], yellowSoft);
+    boxPart(arm, 'shoulderCap', [0.16, 0.075, 0.205], [0, 0.005, 0], yellowDark);
     boxPart(arm, 'shoulderHighlight', [0.09, 0.035, 0.18], [side * 0.018, 0.046, -0.005], yellowSoft);
     boxPart(arm, 'upperSideFold', [0.035, 0.13, 0.17], [side * 0.058, -0.085, 0.005], yellowShadow);
-    boxPart(arm, 'lowerSleeve', [0.12, 0.16, 0.15], [0, -0.26, 0], yellow);
+    boxPart(arm, 'lowerSleeve', [0.13, 0.16, 0.18], [0, -0.26, 0], yellow);
+    boxPart(arm, 'lowerSleeveBackBlock', [0.09, 0.095, 0.05], [0, -0.265, 0.105], yellowShadow);
     boxPart(arm, 'sleevePatch', [0.04, 0.1, 0.025], [-side * 0.045, -0.17, -0.085], 0xf5bd10);
     boxPart(arm, 'elbowTile', [0.085, 0.045, 0.035], [0, -0.205, 0.085], yellowDark);
     boxPart(arm, 'sleeveSeam', [0.018, 0.135, 0.025], [side * 0.062, -0.265, -0.08], yellowLight);
     boxPart(arm, 'cuff', [0.13, 0.055, 0.16], [0, -0.34, 0], yellowDark);
-    boxPart(arm, 'hand', [0.105, 0.1, 0.12], [0, -0.415, -0.005], skin);
+    boxPart(arm, 'hand', [0.11, 0.105, 0.135], [0, -0.415, -0.005], skin);
+    boxPart(arm, 'knuckleBlock', [0.09, 0.035, 0.035], [0, -0.402, -0.082], skinShadow);
     boxPart(arm, 'thumb', [0.035, 0.055, 0.045], [-side * 0.06, -0.405, -0.045], 0xda976c);
     boxPart(arm, 'fingerLine', [0.07, 0.012, 0.01], [0, -0.44, -0.067], 0xc9825b);
     boxPart(arm, 'fingerA', [0.018, 0.04, 0.018], [-0.026, -0.465, -0.028], skinShadow);
@@ -1374,12 +1410,14 @@ function makePlayer() {
   function makeLeg(side) {
     const leg = new THREE.Group();
     leg.position.set(side * 0.115, 0.39, 0);
-    boxPart(leg, 'trouserTop', [0.18, 0.17, 0.2], [0, -0.08, 0], navy);
+    boxPart(leg, 'trouserTop', [0.19, 0.17, 0.24], [0, -0.08, 0.01], navy);
+    boxPart(leg, 'trouserBackMass', [0.145, 0.145, 0.07], [0, -0.09, 0.145], navyDark);
     boxPart(leg, 'knee', [0.13, 0.07, 0.025], [0, -0.16, -0.11], 0x2b4c60);
     boxPart(leg, 'sideTrouserFold', [0.035, 0.155, 0.19], [side * 0.078, -0.15, 0], navyLight);
-    boxPart(leg, 'trouserLower', [0.17, 0.13, 0.19], [0, -0.22, 0], navyDark);
-    boxPart(leg, 'ankleBlock', [0.14, 0.045, 0.18], [0, -0.285, 0.02], 0x274358);
-    boxPart(leg, 'boot', [0.19, 0.1, 0.25], [0, -0.32, -0.025], 0x263038);
+    boxPart(leg, 'trouserLower', [0.18, 0.13, 0.22], [0, -0.22, 0.01], navyDark);
+    boxPart(leg, 'legFrontFacet', [0.105, 0.105, 0.035], [0, -0.215, -0.12], navyLight);
+    boxPart(leg, 'ankleBlock', [0.145, 0.045, 0.20], [0, -0.285, 0.025], 0x274358);
+    boxPart(leg, 'boot', [0.20, 0.1, 0.28], [0, -0.32, -0.025], 0x263038);
     boxPart(leg, 'bootToe', [0.17, 0.055, 0.055], [0, -0.315, -0.145], 0x3f4b51);
     boxPart(leg, 'bootBand', [0.185, 0.025, 0.255], [0, -0.34, -0.028], 0xa4a9a5);
     boxPart(leg, 'bootSideDark', [0.045, 0.075, 0.22], [side * 0.085, -0.32, -0.02], 0x11181d);
@@ -1395,21 +1433,27 @@ function makePlayer() {
   const rightLeg = makeLeg(1);
 
   const backpack = new THREE.Group();
-  backpack.position.set(0, 0.55, 0.17);
-  boxPart(backpack, 'packMain', [0.34, 0.34, 0.15], [0, 0, 0], 0x26323a);
-  boxPart(backpack, 'packTop', [0.30, 0.07, 0.17], [0, 0.18, 0], 0x3c4850);
-  boxPart(backpack, 'packTopStep', [0.22, 0.045, 0.18], [0, 0.235, 0], 0x48555d);
-  boxPart(backpack, 'packSideL', [0.06, 0.24, 0.17], [-0.18, -0.015, 0], 0x171f25);
-  boxPart(backpack, 'packSideR', [0.06, 0.24, 0.17], [0.18, -0.015, 0], 0x171f25);
-  boxPart(backpack, 'packPocket', [0.25, 0.14, 0.06], [0, -0.07, 0.09], 0x171f25);
-  boxPart(backpack, 'packPocketFlap', [0.22, 0.045, 0.07], [0, 0.015, 0.105], 0x465159);
-  boxPart(backpack, 'packBuckle', [0.04, 0.045, 0.025], [0, -0.035, 0.135], 0x9da6a8);
-  boxPart(backpack, 'packBottom', [0.30, 0.065, 0.165], [0, -0.19, 0], 0x151d23);
-  boxPart(backpack, 'packCenterRidge', [0.045, 0.30, 0.032], [0, 0, 0.096], 0x59666d);
-  boxPart(backpack, 'packLeftTile', [0.08, 0.105, 0.035], [-0.095, -0.06, 0.104], 0x303c43);
-  boxPart(backpack, 'packRightTile', [0.08, 0.105, 0.035], [0.095, -0.06, 0.104], 0x10171c);
-  boxPart(backpack, 'packSidePocketL', [0.045, 0.125, 0.09], [-0.205, -0.07, 0.035], 0x222d33);
-  boxPart(backpack, 'packSidePocketR', [0.045, 0.125, 0.09], [0.205, -0.07, 0.035], 0x222d33);
+  backpack.position.set(0, 0.55, 0.205);
+  boxPart(backpack, 'packMain', [0.36, 0.35, 0.20], [0, 0, 0], 0x26323a);
+  boxPart(backpack, 'packBackVolume', [0.28, 0.28, 0.08], [0, -0.02, 0.14], 0x151d23);
+  boxPart(backpack, 'packTop', [0.31, 0.075, 0.215], [0, 0.18, 0], 0x3c4850);
+  boxPart(backpack, 'packTopStep', [0.23, 0.05, 0.22], [0, 0.235, 0.015], 0x48555d);
+  boxPart(backpack, 'packSideL', [0.065, 0.25, 0.21], [-0.19, -0.015, 0], 0x171f25);
+  boxPart(backpack, 'packSideR', [0.065, 0.25, 0.21], [0.19, -0.015, 0], 0x171f25);
+  boxPart(backpack, 'packPocket', [0.26, 0.15, 0.075], [0, -0.07, 0.13], 0x171f25);
+  boxPart(backpack, 'packPocketFlap', [0.23, 0.05, 0.085], [0, 0.015, 0.165], 0x465159);
+  boxPart(backpack, 'packBuckle', [0.045, 0.05, 0.03], [0, -0.035, 0.21], 0x9da6a8);
+  boxPart(backpack, 'packBottom', [0.31, 0.07, 0.205], [0, -0.19, 0], 0x151d23);
+  boxPart(backpack, 'packCenterRidge', [0.05, 0.31, 0.04], [0, 0, 0.185], 0x59666d);
+  boxPart(backpack, 'packLeftTile', [0.085, 0.11, 0.045], [-0.095, -0.06, 0.19], 0x303c43);
+  boxPart(backpack, 'packRightTile', [0.085, 0.11, 0.045], [0.095, -0.06, 0.19], 0x10171c);
+  boxPart(backpack, 'packSidePocketL', [0.05, 0.13, 0.11], [-0.22, -0.07, 0.045], 0x222d33);
+  boxPart(backpack, 'packSidePocketR', [0.05, 0.13, 0.11], [0.22, -0.07, 0.045], 0x222d33);
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 4; col++) {
+      voxelTile(backpack, `packVoxel${row}_${col}`, -0.108 + col * 0.072, 0.095 - row * 0.075, 0.235, (row + col) % 2 ? 0x10171c : 0x3f4b51, 0.95);
+    }
+  }
   boxPart(backpack, 'strapL', [0.055, 0.36, 0.035], [-0.14, 0, -0.1], 0x171f25);
   boxPart(backpack, 'strapR', [0.055, 0.36, 0.035], [0.14, 0, -0.1], 0x171f25);
   boxPart(backpack, 'strapHighlightL', [0.018, 0.30, 0.018], [-0.118, 0.01, -0.126], 0x455058);
