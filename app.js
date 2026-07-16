@@ -1234,8 +1234,12 @@ for (let i = 0; i < 10; i++) {
   scene.add(cloud);
 }
 
+const materialCache = new Map();
 function material(color) {
-  return new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0 });
+  if (!materialCache.has(color)) {
+    materialCache.set(color, new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0 }));
+  }
+  return materialCache.get(color);
 }
 
 function boxPart(parent, name, size, position, color) {
@@ -1257,9 +1261,15 @@ function makePlayer() {
   const yellow = 0xe7ad08;
   const yellowLight = 0xffca19;
   const yellowDark = 0xb77b05;
+  const yellowShadow = 0x9f6904;
+  const yellowSoft = 0xf4bc10;
   const navy = 0x20394a;
+  const navyLight = 0x2e5269;
+  const navyDark = 0x142536;
   const skin = 0xf0b780;
+  const skinShadow = 0xd99567;
   const hair = 0x4e3426;
+  const hairLight = 0x6a4730;
 
   // Raincoat body: layered panels replace one oversized torso block.
   boxPart(visual, 'coatCore', [0.38, 0.32, 0.23], [0, 0.55, 0], yellow);
@@ -1275,8 +1285,22 @@ function makePlayer() {
   boxPart(visual, 'collarR', [0.15, 0.075, 0.04], [0.085, 0.68, -0.14], yellowDark);
   boxPart(visual, 'chestPanelL', [0.15, 0.11, 0.024], [-0.095, 0.57, -0.137], 0xf0b708);
   boxPart(visual, 'chestPanelR', [0.15, 0.11, 0.024], [0.095, 0.57, -0.137], 0xf0b708);
+  boxPart(visual, 'waistFoldL', [0.075, 0.18, 0.02], [-0.18, 0.45, -0.145], yellowShadow);
+  boxPart(visual, 'waistFoldR', [0.075, 0.18, 0.02], [0.18, 0.45, -0.145], yellowLight);
+  boxPart(visual, 'zipperPull', [0.035, 0.045, 0.02], [0.006, 0.455, -0.156], 0x6f571c);
+  boxPart(visual, 'leftPocketTop', [0.115, 0.018, 0.028], [-0.13, 0.485, -0.151], 0xffd24b);
+  boxPart(visual, 'rightPocketTop', [0.115, 0.018, 0.028], [0.13, 0.485, -0.151], 0xffd24b);
+  boxPart(visual, 'coatLeftBottomTile', [0.105, 0.065, 0.03], [-0.155, 0.325, -0.145], yellowSoft);
+  boxPart(visual, 'coatRightBottomTile', [0.105, 0.065, 0.03], [0.155, 0.325, -0.145], yellowDark);
+  boxPart(visual, 'coatBackFoldL', [0.07, 0.24, 0.025], [-0.17, 0.50, 0.138], yellowShadow);
+  boxPart(visual, 'coatBackFoldR', [0.07, 0.24, 0.025], [0.17, 0.50, 0.138], yellowDark);
+  boxPart(visual, 'coatBackCenter', [0.035, 0.32, 0.025], [0, 0.51, 0.143], 0xf7c21b);
   for (let i = 0; i < 4; i++) {
     boxPart(visual, `button${i}`, [0.025, 0.025, 0.018], [0.035, 0.62 - i * 0.075, -0.151], 0x6f571c);
+  }
+  for (let i = 0; i < 3; i++) {
+    boxPart(visual, `leftRaincoatPixel${i}`, [0.035, 0.035, 0.018], [-0.07 - i * 0.045, 0.63 - i * 0.09, -0.155], i % 2 ? yellowLight : yellowDark);
+    boxPart(visual, `rightRaincoatPixel${i}`, [0.035, 0.035, 0.018], [0.07 + i * 0.045, 0.61 - i * 0.08, -0.155], i % 2 ? yellowDark : yellowLight);
   }
 
   const head = boxPart(visual, 'head', [0.31, 0.27, 0.29], [0, 0.84, -0.01], skin);
@@ -1289,15 +1313,27 @@ function makePlayer() {
   boxPart(head, 'hoodBack', [0.31, 0.2, 0.07], [0, 0, 0.15], yellowDark);
   boxPart(head, 'hoodTempleL', [0.055, 0.08, 0.05], [-0.13, -0.065, -0.145], yellowDark);
   boxPart(head, 'hoodTempleR', [0.055, 0.08, 0.05], [0.13, -0.065, -0.145], yellowDark);
-  boxPart(head, 'fringeL', [0.09, 0.055, 0.025], [-0.09, 0.09, -0.15], hair);
-  boxPart(head, 'fringeMid', [0.075, 0.075, 0.025], [-0.015, 0.08, -0.15], 0x5e3c29);
-  boxPart(head, 'fringeR', [0.08, 0.045, 0.025], [0.065, 0.095, -0.15], hair);
+  boxPart(head, 'hoodEdgeTopL', [0.085, 0.035, 0.035], [-0.105, 0.125, -0.145], yellowDark);
+  boxPart(head, 'hoodEdgeTopM', [0.085, 0.035, 0.035], [0, 0.135, -0.145], 0xffdb44);
+  boxPart(head, 'hoodEdgeTopR', [0.085, 0.035, 0.035], [0.105, 0.125, -0.145], yellowDark);
+  boxPart(head, 'hoodCheekL', [0.04, 0.105, 0.04], [-0.128, -0.02, -0.155], yellowShadow);
+  boxPart(head, 'hoodCheekR', [0.04, 0.105, 0.04], [0.128, -0.02, -0.155], yellow);
+  boxPart(head, 'hoodSideTileL1', [0.035, 0.06, 0.06], [-0.18, 0.06, 0.00], yellowDark);
+  boxPart(head, 'hoodSideTileL2', [0.035, 0.06, 0.06], [-0.18, -0.035, 0.055], yellowShadow);
+  boxPart(head, 'hoodSideTileR1', [0.035, 0.06, 0.06], [0.18, 0.06, 0.00], yellowLight);
+  boxPart(head, 'hoodSideTileR2', [0.035, 0.06, 0.06], [0.18, -0.035, 0.055], yellowDark);
+  boxPart(head, 'fringeL', [0.075, 0.055, 0.026], [-0.105, 0.092, -0.158], hair);
+  boxPart(head, 'fringeMid', [0.065, 0.085, 0.026], [-0.035, 0.075, -0.16], hairLight);
+  boxPart(head, 'fringeR', [0.07, 0.045, 0.026], [0.045, 0.095, -0.158], hair);
+  boxPart(head, 'fringeTipL', [0.04, 0.055, 0.022], [-0.07, 0.045, -0.17], 0x3f2b20);
+  boxPart(head, 'fringeTipR', [0.045, 0.04, 0.022], [0.095, 0.058, -0.17], hairLight);
   boxPart(head, 'sideHairL', [0.035, 0.09, 0.03], [-0.135, 0.025, -0.15], hair);
   boxPart(head, 'sideHairR', [0.035, 0.075, 0.03], [0.135, 0.035, -0.15], hair);
   boxPart(head, 'earL', [0.035, 0.075, 0.055], [-0.168, -0.015, -0.015], 0xda976c);
   boxPart(head, 'earR', [0.035, 0.075, 0.055], [0.168, -0.015, -0.015], 0xda976c);
   boxPart(head, 'jawL', [0.055, 0.055, 0.04], [-0.125, -0.12, -0.13], 0xe4a473);
   boxPart(head, 'jawR', [0.055, 0.055, 0.04], [0.125, -0.12, -0.13], 0xe4a473);
+  boxPart(head, 'chin', [0.105, 0.035, 0.032], [0, -0.137, -0.126], skinShadow);
   boxPart(head, 'eyeL', [0.038, 0.045, 0.018], [-0.073, -0.005, -0.154], 0x253342);
   boxPart(head, 'eyeR', [0.038, 0.045, 0.018], [0.073, -0.005, -0.154], 0x253342);
   boxPart(head, 'eyeGlintL', [0.012, 0.014, 0.01], [-0.066, 0.006, -0.167], 0xffffff);
@@ -1306,8 +1342,11 @@ function makePlayer() {
   boxPart(head, 'browR', [0.06, 0.014, 0.016], [0.073, 0.044, -0.16], hair);
   boxPart(head, 'nose', [0.035, 0.026, 0.018], [0, -0.045, -0.155], 0xd78f64);
   boxPart(head, 'mouth', [0.065, 0.022, 0.018], [0, -0.09, -0.156], 0x7d3530);
+  boxPart(head, 'mouthHighlight', [0.028, 0.009, 0.01], [-0.018, -0.085, -0.168], 0xf4b0a0);
   boxPart(head, 'cheekL', [0.035, 0.018, 0.012], [-0.105, -0.065, -0.162], 0xe69775);
   boxPart(head, 'cheekR', [0.035, 0.018, 0.012], [0.105, -0.065, -0.162], 0xe69775);
+  boxPart(head, 'faceShadowL', [0.022, 0.085, 0.012], [-0.145, -0.065, -0.152], skinShadow);
+  boxPart(head, 'faceShadowR', [0.022, 0.075, 0.012], [0.145, -0.055, -0.152], 0xf6c091);
 
   // Articulated arms and legs are each assembled from multiple smaller blocks.
   function makeArm(side) {
@@ -1315,12 +1354,19 @@ function makePlayer() {
     arm.position.set(side * 0.285, 0.68, 0);
     boxPart(arm, 'upperSleeve', [0.13, 0.2, 0.16], [0, -0.09, 0], yellowLight);
     boxPart(arm, 'shoulderCap', [0.15, 0.075, 0.175], [0, 0.005, 0], yellowDark);
+    boxPart(arm, 'shoulderHighlight', [0.09, 0.035, 0.18], [side * 0.018, 0.046, -0.005], yellowSoft);
+    boxPart(arm, 'upperSideFold', [0.035, 0.13, 0.17], [side * 0.058, -0.085, 0.005], yellowShadow);
     boxPart(arm, 'lowerSleeve', [0.12, 0.16, 0.15], [0, -0.26, 0], yellow);
     boxPart(arm, 'sleevePatch', [0.04, 0.1, 0.025], [-side * 0.045, -0.17, -0.085], 0xf5bd10);
+    boxPart(arm, 'elbowTile', [0.085, 0.045, 0.035], [0, -0.205, 0.085], yellowDark);
+    boxPart(arm, 'sleeveSeam', [0.018, 0.135, 0.025], [side * 0.062, -0.265, -0.08], yellowLight);
     boxPart(arm, 'cuff', [0.13, 0.055, 0.16], [0, -0.34, 0], yellowDark);
     boxPart(arm, 'hand', [0.105, 0.1, 0.12], [0, -0.415, -0.005], skin);
     boxPart(arm, 'thumb', [0.035, 0.055, 0.045], [-side * 0.06, -0.405, -0.045], 0xda976c);
     boxPart(arm, 'fingerLine', [0.07, 0.012, 0.01], [0, -0.44, -0.067], 0xc9825b);
+    boxPart(arm, 'fingerA', [0.018, 0.04, 0.018], [-0.026, -0.465, -0.028], skinShadow);
+    boxPart(arm, 'fingerB', [0.018, 0.043, 0.018], [0, -0.468, -0.03], skin);
+    boxPart(arm, 'fingerC', [0.018, 0.038, 0.018], [0.026, -0.465, -0.028], skinShadow);
     visual.add(arm);
     return arm;
   }
@@ -1330,10 +1376,14 @@ function makePlayer() {
     leg.position.set(side * 0.115, 0.39, 0);
     boxPart(leg, 'trouserTop', [0.18, 0.17, 0.2], [0, -0.08, 0], navy);
     boxPart(leg, 'knee', [0.13, 0.07, 0.025], [0, -0.16, -0.11], 0x2b4c60);
-    boxPart(leg, 'trouserLower', [0.17, 0.13, 0.19], [0, -0.22, 0], 0x192f40);
+    boxPart(leg, 'sideTrouserFold', [0.035, 0.155, 0.19], [side * 0.078, -0.15, 0], navyLight);
+    boxPart(leg, 'trouserLower', [0.17, 0.13, 0.19], [0, -0.22, 0], navyDark);
+    boxPart(leg, 'ankleBlock', [0.14, 0.045, 0.18], [0, -0.285, 0.02], 0x274358);
     boxPart(leg, 'boot', [0.19, 0.1, 0.25], [0, -0.32, -0.025], 0x263038);
     boxPart(leg, 'bootToe', [0.17, 0.055, 0.055], [0, -0.315, -0.145], 0x3f4b51);
     boxPart(leg, 'bootBand', [0.185, 0.025, 0.255], [0, -0.34, -0.028], 0xa4a9a5);
+    boxPart(leg, 'bootSideDark', [0.045, 0.075, 0.22], [side * 0.085, -0.32, -0.02], 0x11181d);
+    boxPart(leg, 'toeHighlight', [0.075, 0.025, 0.025], [0, -0.292, -0.18], 0x5b6467);
     boxPart(leg, 'sole', [0.2, 0.035, 0.265], [0, -0.38, -0.03], 0x14191d);
     visual.add(leg);
     return leg;
@@ -1354,8 +1404,16 @@ function makePlayer() {
   boxPart(backpack, 'packPocket', [0.25, 0.14, 0.06], [0, -0.07, 0.09], 0x171f25);
   boxPart(backpack, 'packPocketFlap', [0.22, 0.045, 0.07], [0, 0.015, 0.105], 0x465159);
   boxPart(backpack, 'packBuckle', [0.04, 0.045, 0.025], [0, -0.035, 0.135], 0x9da6a8);
+  boxPart(backpack, 'packBottom', [0.30, 0.065, 0.165], [0, -0.19, 0], 0x151d23);
+  boxPart(backpack, 'packCenterRidge', [0.045, 0.30, 0.032], [0, 0, 0.096], 0x59666d);
+  boxPart(backpack, 'packLeftTile', [0.08, 0.105, 0.035], [-0.095, -0.06, 0.104], 0x303c43);
+  boxPart(backpack, 'packRightTile', [0.08, 0.105, 0.035], [0.095, -0.06, 0.104], 0x10171c);
+  boxPart(backpack, 'packSidePocketL', [0.045, 0.125, 0.09], [-0.205, -0.07, 0.035], 0x222d33);
+  boxPart(backpack, 'packSidePocketR', [0.045, 0.125, 0.09], [0.205, -0.07, 0.035], 0x222d33);
   boxPart(backpack, 'strapL', [0.055, 0.36, 0.035], [-0.14, 0, -0.1], 0x171f25);
   boxPart(backpack, 'strapR', [0.055, 0.36, 0.035], [0.14, 0, -0.1], 0x171f25);
+  boxPart(backpack, 'strapHighlightL', [0.018, 0.30, 0.018], [-0.118, 0.01, -0.126], 0x455058);
+  boxPart(backpack, 'strapHighlightR', [0.018, 0.30, 0.018], [0.118, 0.01, -0.126], 0x455058);
   visual.add(backpack);
 
   root.userData = { visual, leftArm, rightArm, leftLeg, rightLeg };
