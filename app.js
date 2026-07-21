@@ -1262,200 +1262,85 @@ function makePlayer() {
   const visual = new THREE.Group();
   root.add(visual);
 
+  // Rebuilt from the reference photo: yellow hooded raincoat, black backpack,
+  // navy trousers. Built directly at final (elongated) proportions, feet at y=0.
   const yellow = 0xe7ad08;
   const yellowLight = 0xffca19;
   const yellowDark = 0xb77b05;
   const yellowShadow = 0x9f6904;
-  const yellowSoft = 0xf4bc10;
-  const navy = 0x20394a;
-  const navyLight = 0x2e5269;
-  const navyDark = 0x142536;
+  const navy = 0x24405a;
+  const navyDark = 0x172a3d;
   const skin = 0xf0b780;
   const skinShadow = 0xd99567;
   const hair = 0x4e3426;
-  const hairLight = 0x6a4730;
+  const bagDark = 0x232b31;
+  const bagDarker = 0x14191d;
+  const bootColor = 0x262b30;
 
-  // Taller, less-chibi proportions: stretch the whole body (torso/arms/legs) vertically
-  // while the head counter-scales to keep its original absolute size.
-  const bodyScale = 1.6;
-  const legExtraScale = 1.25;
+  const hipY = 0.70;
+  const shoulderY = 1.05;
+  const headY = 1.26;
 
-  // Raincoat body: layered panels replace one oversized torso block.
-  boxPart(visual, 'coatCore', [0.40, 0.32, 0.30], [0, 0.55, 0.01], yellow);
-  boxPart(visual, 'coatChestVolume', [0.31, 0.22, 0.055], [0, 0.57, -0.166], yellowSoft);
-  boxPart(visual, 'coatBackVolume', [0.35, 0.30, 0.075], [0, 0.53, 0.18], yellowDark);
-  boxPart(visual, 'coatShoulders', [0.49, 0.09, 0.31], [0, 0.69, 0.01], yellowLight);
-  boxPart(visual, 'coatShoulderBackLip', [0.42, 0.055, 0.085], [0, 0.705, 0.205], yellowDark);
-  boxPart(visual, 'coatSkirt', [0.48, 0.15, 0.32], [0, 0.37, 0.02], yellow);
-  boxPart(visual, 'coatHem', [0.50, 0.055, 0.34], [0, 0.30, 0.025], yellowDark);
-  boxPart(visual, 'zipper', [0.025, 0.34, 0.018], [0, 0.53, -0.126], 0xffdf55);
-  boxPart(visual, 'pocketL', [0.11, 0.08, 0.025], [-0.13, 0.43, -0.137], yellowDark);
-  boxPart(visual, 'pocketR', [0.11, 0.08, 0.025], [0.13, 0.43, -0.137], yellowDark);
-  boxPart(visual, 'coatSideL', [0.07, 0.27, 0.30], [-0.225, 0.50, 0.01], 0xd49306);
-  boxPart(visual, 'coatSideR', [0.07, 0.27, 0.30], [0.225, 0.50, 0.01], 0xd49306);
-  boxPart(visual, 'coatSideBackL', [0.045, 0.21, 0.08], [-0.26, 0.49, 0.15], yellowShadow);
-  boxPart(visual, 'coatSideBackR', [0.045, 0.21, 0.08], [0.26, 0.49, 0.15], yellowLight);
-  boxPart(visual, 'collarL', [0.15, 0.075, 0.04], [-0.085, 0.68, -0.14], yellowDark);
-  boxPart(visual, 'collarR', [0.15, 0.075, 0.04], [0.085, 0.68, -0.14], yellowDark);
-  boxPart(visual, 'chestPanelL', [0.15, 0.11, 0.024], [-0.095, 0.57, -0.137], 0xf0b708);
-  boxPart(visual, 'chestPanelR', [0.15, 0.11, 0.024], [0.095, 0.57, -0.137], 0xf0b708);
-  boxPart(visual, 'frontTorsoRibL', [0.075, 0.255, 0.042], [-0.185, 0.535, -0.176], yellowDark);
-  boxPart(visual, 'frontTorsoRibR', [0.075, 0.255, 0.042], [0.185, 0.535, -0.176], yellowLight);
-  boxPart(visual, 'frontChestRaisedL', [0.105, 0.085, 0.048], [-0.09, 0.61, -0.19], 0xffd141);
-  boxPart(visual, 'frontChestRaisedR', [0.105, 0.085, 0.048], [0.09, 0.61, -0.19], 0xe3a207);
-  boxPart(visual, 'frontBellyRaisedL', [0.13, 0.095, 0.045], [-0.092, 0.49, -0.188], yellowSoft);
-  boxPart(visual, 'frontBellyRaisedR', [0.13, 0.095, 0.045], [0.092, 0.49, -0.188], yellow);
-  boxPart(visual, 'collarDepthL', [0.12, 0.055, 0.065], [-0.105, 0.704, -0.17], yellowShadow);
-  boxPart(visual, 'collarDepthR', [0.12, 0.055, 0.065], [0.105, 0.704, -0.17], yellowDark);
-  boxPart(visual, 'waistFoldL', [0.075, 0.18, 0.02], [-0.18, 0.45, -0.145], yellowShadow);
-  boxPart(visual, 'waistFoldR', [0.075, 0.18, 0.02], [0.18, 0.45, -0.145], yellowLight);
-  boxPart(visual, 'zipperPull', [0.035, 0.045, 0.02], [0.006, 0.455, -0.156], 0x6f571c);
-  boxPart(visual, 'leftPocketTop', [0.115, 0.018, 0.028], [-0.13, 0.485, -0.151], 0xffd24b);
-  boxPart(visual, 'rightPocketTop', [0.115, 0.018, 0.028], [0.13, 0.485, -0.151], 0xffd24b);
-  boxPart(visual, 'leftPocketVolume', [0.115, 0.07, 0.05], [-0.13, 0.425, -0.185], 0xc98705);
-  boxPart(visual, 'rightPocketVolume', [0.115, 0.07, 0.05], [0.13, 0.425, -0.185], 0xf2b60d);
-  boxPart(visual, 'zipperRaisedTrack', [0.04, 0.32, 0.032], [0, 0.535, -0.194], 0xd19005);
-  boxPart(visual, 'coatLeftBottomTile', [0.105, 0.065, 0.03], [-0.155, 0.325, -0.145], yellowSoft);
-  boxPart(visual, 'coatRightBottomTile', [0.105, 0.065, 0.03], [0.155, 0.325, -0.145], yellowDark);
-  boxPart(visual, 'coatBackFoldL', [0.07, 0.24, 0.025], [-0.17, 0.50, 0.138], yellowShadow);
-  boxPart(visual, 'coatBackFoldR', [0.07, 0.24, 0.025], [0.17, 0.50, 0.138], yellowDark);
-  boxPart(visual, 'coatBackCenter', [0.035, 0.32, 0.025], [0, 0.51, 0.143], 0xf7c21b);
-  boxPart(visual, 'coatBackLowerBlockL', [0.13, 0.085, 0.05], [-0.105, 0.345, 0.195], yellowShadow);
-  boxPart(visual, 'coatBackLowerBlockR', [0.13, 0.085, 0.05], [0.105, 0.345, 0.195], yellow);
-  boxPart(visual, 'coatBackHoodShadow', [0.22, 0.055, 0.045], [0, 0.655, 0.222], yellowShadow);
-  for (let row = 0; row < 4; row++) {
-    for (let col = 0; col < 5; col++) {
-      if ((row + col) % 2 === 0) {
-        voxelTile(visual, `coatFrontPixel${row}_${col}`, -0.145 + col * 0.072, 0.625 - row * 0.073, -0.184, row % 2 ? yellowDark : yellowLight, 0.9);
-      }
-    }
-  }
-  for (let row = 0; row < 4; row++) {
-    for (let col = 0; col < 4; col++) {
-      if ((row + col) % 2 === 1) {
-        voxelTile(visual, `coatBackPixel${row}_${col}`, -0.108 + col * 0.072, 0.61 - row * 0.07, 0.232, row % 2 ? yellowShadow : yellowSoft, 0.95);
-      }
-    }
-  }
-  for (let i = 0; i < 4; i++) {
-    boxPart(visual, `button${i}`, [0.025, 0.025, 0.018], [0.035, 0.62 - i * 0.075, -0.151], 0x6f571c);
-  }
-  for (let i = 0; i < 3; i++) {
-    boxPart(visual, `leftRaincoatPixel${i}`, [0.035, 0.035, 0.018], [-0.07 - i * 0.045, 0.63 - i * 0.09, -0.155], i % 2 ? yellowLight : yellowDark);
-    boxPart(visual, `rightRaincoatPixel${i}`, [0.035, 0.035, 0.018], [0.07 + i * 0.045, 0.61 - i * 0.08, -0.155], i % 2 ? yellowDark : yellowLight);
-  }
+  // Coat: chest/back mass, wide shoulder yoke, flared hem, zipper and pockets.
+  boxPart(visual, 'coatMain', [0.42, 0.36, 0.28], [0, 0.90, 0.01], yellow);
+  boxPart(visual, 'coatBack', [0.36, 0.30, 0.10], [0, 0.87, 0.15], yellowDark);
+  boxPart(visual, 'shoulderYoke', [0.50, 0.09, 0.30], [0, 1.055, 0.01], yellowLight);
+  boxPart(visual, 'collarFront', [0.16, 0.06, 0.05], [0, 1.06, -0.13], yellowDark);
+  boxPart(visual, 'zipper', [0.025, 0.34, 0.02], [0, 0.90, -0.145], 0xffdf55);
+  boxPart(visual, 'hem', [0.46, 0.07, 0.30], [0, 0.705, 0.02], yellowDark);
+  boxPart(visual, 'pocketL', [0.10, 0.07, 0.02], [-0.14, 0.80, -0.135], yellowDark);
+  boxPart(visual, 'pocketR', [0.10, 0.07, 0.02], [0.14, 0.80, -0.135], yellowDark);
+  boxPart(visual, 'sideSeamL', [0.03, 0.28, 0.24], [-0.205, 0.86, 0.01], yellowShadow);
+  boxPart(visual, 'sideSeamR', [0.03, 0.28, 0.24], [0.205, 0.86, 0.01], yellowLight);
 
-  const head = boxPart(visual, 'head', [0.31, 0.27, 0.31], [0, 0.84, -0.01], skin);
-  head.scale.y = 1 / bodyScale;
-  boxPart(head, 'hoodTop', [0.30, 0.07, 0.36], [0, 0.135, 0.018], yellowLight);
-  boxPart(head, 'hoodTopLeft', [0.09, 0.07, 0.33], [-0.13, 0.105, 0.018], yellow);
-  boxPart(head, 'hoodTopRight', [0.09, 0.07, 0.33], [0.13, 0.105, 0.018], yellow);
-  boxPart(head, 'hoodCrown', [0.17, 0.045, 0.32], [0, 0.18, 0.018], 0xffd337);
-  boxPart(head, 'hoodTopBackStep', [0.24, 0.045, 0.07], [0, 0.158, 0.205], yellowShadow);
-  boxPart(head, 'hoodLeft', [0.075, 0.23, 0.35], [-0.152, 0.01, 0.018], yellow);
-  boxPart(head, 'hoodRight', [0.075, 0.23, 0.35], [0.152, 0.01, 0.018], yellow);
-  boxPart(head, 'hoodBack', [0.32, 0.21, 0.09], [0, 0, 0.18], yellowDark);
-  boxPart(head, 'hoodBackBulge', [0.24, 0.14, 0.065], [0, -0.02, 0.235], yellowShadow);
-  boxPart(head, 'hoodTempleL', [0.055, 0.08, 0.05], [-0.13, -0.065, -0.145], yellowDark);
-  boxPart(head, 'hoodTempleR', [0.055, 0.08, 0.05], [0.13, -0.065, -0.145], yellowDark);
-  boxPart(head, 'hoodEdgeTopL', [0.085, 0.035, 0.035], [-0.105, 0.125, -0.145], yellowDark);
-  boxPart(head, 'hoodEdgeTopM', [0.085, 0.035, 0.035], [0, 0.135, -0.145], 0xffdb44);
-  boxPart(head, 'hoodEdgeTopR', [0.085, 0.035, 0.035], [0.105, 0.125, -0.145], yellowDark);
-  boxPart(head, 'hoodCheekL', [0.04, 0.105, 0.04], [-0.128, -0.02, -0.155], yellowShadow);
-  boxPart(head, 'hoodCheekR', [0.04, 0.105, 0.04], [0.128, -0.02, -0.155], yellow);
-  boxPart(head, 'hoodSideTileL1', [0.035, 0.06, 0.06], [-0.18, 0.06, 0.00], yellowDark);
-  boxPart(head, 'hoodSideTileL2', [0.035, 0.06, 0.06], [-0.18, -0.035, 0.055], yellowShadow);
-  boxPart(head, 'hoodSideTileR1', [0.035, 0.06, 0.06], [0.18, 0.06, 0.00], yellowLight);
-  boxPart(head, 'hoodSideTileR2', [0.035, 0.06, 0.06], [0.18, -0.035, 0.055], yellowDark);
-  for (let i = 0; i < 4; i++) {
-    voxelTile(head, `hoodTopPixel${i}`, -0.108 + i * 0.072, 0.188, -0.02 + (i % 2) * 0.062, i % 2 ? yellowLight : yellowDark, 0.85);
-    voxelTile(head, `hoodBackPixel${i}`, -0.108 + i * 0.072, 0.058 - (i % 2) * 0.06, 0.272, i % 2 ? yellowShadow : yellow, 0.9);
-  }
-  boxPart(head, 'facePlaneRaised', [0.225, 0.205, 0.035], [0, -0.035, -0.176], 0xf3bd88);
-  boxPart(head, 'foreheadBlock', [0.18, 0.045, 0.04], [0, 0.062, -0.19], skin);
-  boxPart(head, 'leftBrowVolume', [0.075, 0.035, 0.045], [-0.074, 0.034, -0.204], 0x5b3a29);
-  boxPart(head, 'rightBrowVolume', [0.075, 0.035, 0.045], [0.074, 0.034, -0.204], 0x5b3a29);
-  boxPart(head, 'eyeSocketL', [0.058, 0.052, 0.032], [-0.074, -0.004, -0.204], 0xd5966d);
-  boxPart(head, 'eyeSocketR', [0.058, 0.052, 0.032], [0.074, -0.004, -0.204], 0xd5966d);
-  boxPart(head, 'cheekVolumeL', [0.072, 0.07, 0.052], [-0.096, -0.064, -0.204], 0xeaa879);
-  boxPart(head, 'cheekVolumeR', [0.072, 0.07, 0.052], [0.096, -0.064, -0.204], 0xf2bd8a);
-  boxPart(head, 'mouthMuzzle', [0.115, 0.062, 0.046], [0, -0.097, -0.205], 0xe0a173);
-  boxPart(head, 'fringeL', [0.075, 0.055, 0.044], [-0.105, 0.092, -0.184], hair);
-  boxPart(head, 'fringeMid', [0.065, 0.085, 0.046], [-0.035, 0.075, -0.19], hairLight);
-  boxPart(head, 'fringeR', [0.07, 0.045, 0.044], [0.045, 0.095, -0.184], hair);
-  boxPart(head, 'fringeTipL', [0.04, 0.055, 0.038], [-0.07, 0.045, -0.215], 0x3f2b20);
-  boxPart(head, 'fringeTipR', [0.045, 0.04, 0.038], [0.095, 0.058, -0.215], hairLight);
-  boxPart(head, 'sideHairL', [0.04, 0.105, 0.052], [-0.145, 0.02, -0.172], hair);
-  boxPart(head, 'sideHairR', [0.04, 0.09, 0.052], [0.145, 0.03, -0.172], hair);
-  boxPart(head, 'earL', [0.035, 0.075, 0.055], [-0.168, -0.015, -0.015], 0xda976c);
-  boxPart(head, 'earR', [0.035, 0.075, 0.055], [0.168, -0.015, -0.015], 0xda976c);
-  boxPart(head, 'jawL', [0.055, 0.055, 0.04], [-0.125, -0.12, -0.13], 0xe4a473);
-  boxPart(head, 'jawR', [0.055, 0.055, 0.04], [0.125, -0.12, -0.13], 0xe4a473);
-  boxPart(head, 'chin', [0.11, 0.042, 0.05], [0, -0.137, -0.185], skinShadow);
-  boxPart(head, 'jawDepthL', [0.045, 0.07, 0.045], [-0.13, -0.108, -0.176], 0xd99468);
-  boxPart(head, 'jawDepthR', [0.045, 0.07, 0.045], [0.13, -0.108, -0.176], 0xf2ba87);
-  boxPart(head, 'eyeL', [0.04, 0.046, 0.026], [-0.073, -0.005, -0.226], 0x253342);
-  boxPart(head, 'eyeR', [0.04, 0.046, 0.026], [0.073, -0.005, -0.226], 0x253342);
-  boxPart(head, 'eyeGlintL', [0.012, 0.014, 0.012], [-0.066, 0.006, -0.243], 0xffffff);
-  boxPart(head, 'eyeGlintR', [0.012, 0.014, 0.012], [0.080, 0.006, -0.243], 0xffffff);
-  boxPart(head, 'browL', [0.064, 0.018, 0.026], [-0.073, 0.047, -0.228], hair);
-  boxPart(head, 'browR', [0.064, 0.018, 0.026], [0.073, 0.047, -0.228], hair);
-  boxPart(head, 'noseBridge', [0.026, 0.07, 0.034], [0, -0.024, -0.231], 0xe2a272);
-  boxPart(head, 'noseTip', [0.046, 0.035, 0.052], [0, -0.056, -0.25], 0xd98f61);
-  boxPart(head, 'noseHighlight', [0.016, 0.02, 0.012], [-0.007, -0.049, -0.282], 0xf6c090);
-  boxPart(head, 'mouth', [0.068, 0.024, 0.026], [0, -0.095, -0.236], 0x7d3530);
-  boxPart(head, 'lowerLip', [0.052, 0.014, 0.018], [0.004, -0.116, -0.238], 0xc76f62);
-  boxPart(head, 'mouthHighlight', [0.028, 0.009, 0.012], [-0.018, -0.089, -0.255], 0xf4b0a0);
-  boxPart(head, 'cheekL', [0.042, 0.022, 0.02], [-0.108, -0.065, -0.238], 0xe69775);
-  boxPart(head, 'cheekR', [0.042, 0.022, 0.02], [0.108, -0.065, -0.238], 0xe69775);
-  boxPart(head, 'faceShadowL', [0.024, 0.09, 0.022], [-0.149, -0.064, -0.198], skinShadow);
-  boxPart(head, 'faceShadowR', [0.024, 0.08, 0.022], [0.149, -0.055, -0.198], 0xf6c091);
+  // Black backpack, own group so straps/flap move as a unit with the torso.
+  const backpack = new THREE.Group();
+  backpack.position.set(0, 0.90, 0.20);
+  boxPart(backpack, 'packMain', [0.32, 0.34, 0.16], [0, 0, 0.02], bagDark);
+  boxPart(backpack, 'packFlap', [0.26, 0.06, 0.17], [0, 0.155, 0.015], 0x30393f);
+  boxPart(backpack, 'packPocket', [0.22, 0.12, 0.06], [0, -0.10, 0.06], bagDarker);
+  boxPart(backpack, 'strapL', [0.05, 0.34, 0.035], [-0.135, 0.02, -0.16], bagDark);
+  boxPart(backpack, 'strapR', [0.05, 0.34, 0.035], [0.135, 0.02, -0.16], bagDark);
+  visual.add(backpack);
 
-  // Articulated arms and legs are each assembled from multiple smaller blocks.
+  // Head: simplified hood + face, kept at true size (not stretched with the body).
+  const head = boxPart(visual, 'head', [0.30, 0.27, 0.31], [0, headY, -0.005], skin);
+  boxPart(head, 'hoodTop', [0.30, 0.10, 0.32], [0, 0.11, 0.02], yellowLight);
+  boxPart(head, 'hoodBack', [0.30, 0.22, 0.10], [0, 0.02, 0.15], yellowDark);
+  boxPart(head, 'hoodSideL', [0.06, 0.22, 0.30], [-0.155, -0.01, 0], yellow);
+  boxPart(head, 'hoodSideR', [0.06, 0.22, 0.30], [0.155, -0.01, 0], yellow);
+  boxPart(head, 'hoodFrontRim', [0.26, 0.05, 0.05], [0, 0.11, -0.14], yellowDark);
+  boxPart(head, 'faceBase', [0.24, 0.22, 0.06], [0, -0.03, -0.15], skin);
+  boxPart(head, 'hairFringe', [0.20, 0.06, 0.05], [0, 0.05, -0.15], hair);
+  boxPart(head, 'browL', [0.06, 0.02, 0.03], [-0.06, 0.02, -0.17], hair);
+  boxPart(head, 'browR', [0.06, 0.02, 0.03], [0.06, 0.02, -0.17], hair);
+  boxPart(head, 'eyeL', [0.045, 0.045, 0.02], [-0.06, -0.02, -0.18], 0x253342);
+  boxPart(head, 'eyeR', [0.045, 0.045, 0.02], [0.06, -0.02, -0.18], 0x253342);
+  boxPart(head, 'eyeGlintL', [0.012, 0.012, 0.01], [-0.068, -0.012, -0.19], 0xffffff);
+  boxPart(head, 'eyeGlintR', [0.012, 0.012, 0.01], [0.052, -0.012, -0.19], 0xffffff);
+  boxPart(head, 'nose', [0.03, 0.04, 0.03], [0, -0.05, -0.19], 0xe2a272);
+  boxPart(head, 'mouth', [0.06, 0.02, 0.02], [0, -0.09, -0.18], 0x7d3530);
+  boxPart(head, 'chin', [0.10, 0.03, 0.04], [0, -0.12, -0.16], skinShadow);
+
+  // Articulated arms and legs, each a Group pivoting from the shoulder/hip joint.
   function makeArm(side) {
     const arm = new THREE.Group();
-    arm.position.set(side * 0.285, 0.68, 0);
-    boxPart(arm, 'upperSleeve', [0.14, 0.2, 0.19], [0, -0.09, 0], yellowLight);
-    boxPart(arm, 'upperSleeveBack', [0.10, 0.17, 0.055], [0, -0.095, 0.115], yellowDark);
-    boxPart(arm, 'upperSleeveFront', [0.10, 0.14, 0.04], [0, -0.095, -0.105], yellowSoft);
-    boxPart(arm, 'shoulderCap', [0.16, 0.075, 0.205], [0, 0.005, 0], yellowDark);
-    boxPart(arm, 'shoulderHighlight', [0.09, 0.035, 0.18], [side * 0.018, 0.046, -0.005], yellowSoft);
-    boxPart(arm, 'upperSideFold', [0.035, 0.13, 0.17], [side * 0.058, -0.085, 0.005], yellowShadow);
-    boxPart(arm, 'lowerSleeve', [0.13, 0.16, 0.18], [0, -0.26, 0], yellow);
-    boxPart(arm, 'lowerSleeveBackBlock', [0.09, 0.095, 0.05], [0, -0.265, 0.105], yellowShadow);
-    boxPart(arm, 'sleevePatch', [0.04, 0.1, 0.025], [-side * 0.045, -0.17, -0.085], 0xf5bd10);
-    boxPart(arm, 'elbowTile', [0.085, 0.045, 0.035], [0, -0.205, 0.085], yellowDark);
-    boxPart(arm, 'sleeveSeam', [0.018, 0.135, 0.025], [side * 0.062, -0.265, -0.08], yellowLight);
-    boxPart(arm, 'cuff', [0.13, 0.055, 0.16], [0, -0.34, 0], yellowDark);
-    boxPart(arm, 'hand', [0.11, 0.105, 0.135], [0, -0.415, -0.005], skin);
-    boxPart(arm, 'knuckleBlock', [0.09, 0.035, 0.035], [0, -0.402, -0.082], skinShadow);
-    boxPart(arm, 'thumb', [0.035, 0.055, 0.045], [-side * 0.06, -0.405, -0.045], 0xda976c);
-    boxPart(arm, 'fingerLine', [0.07, 0.012, 0.01], [0, -0.44, -0.067], 0xc9825b);
-    boxPart(arm, 'fingerA', [0.018, 0.04, 0.018], [-0.026, -0.465, -0.028], skinShadow);
-    boxPart(arm, 'fingerB', [0.018, 0.043, 0.018], [0, -0.468, -0.03], skin);
-    boxPart(arm, 'fingerC', [0.018, 0.038, 0.018], [0.026, -0.465, -0.028], skinShadow);
+    arm.position.set(side * 0.245, shoulderY, 0);
+    boxPart(arm, 'upperSleeve', [0.15, 0.20, 0.17], [0, -0.10, 0], yellowLight);
+    boxPart(arm, 'lowerSleeve', [0.13, 0.18, 0.15], [0, -0.29, 0], yellow);
+    boxPart(arm, 'cuff', [0.135, 0.05, 0.155], [0, -0.40, 0], yellowDark);
+    boxPart(arm, 'hand', [0.11, 0.10, 0.13], [0, -0.46, -0.01], skin);
     visual.add(arm);
     return arm;
   }
 
   function makeLeg(side) {
     const leg = new THREE.Group();
-    // Hip raised to compensate for legExtraScale so the boots still meet the ground.
-    leg.position.set(side * 0.115, 0.493, 0);
-    leg.scale.y = legExtraScale;
-    boxPart(leg, 'trouserTop', [0.19, 0.17, 0.24], [0, -0.08, 0.01], navy);
-    boxPart(leg, 'trouserBackMass', [0.145, 0.145, 0.07], [0, -0.09, 0.145], navyDark);
-    boxPart(leg, 'knee', [0.13, 0.07, 0.025], [0, -0.16, -0.11], 0x2b4c60);
-    boxPart(leg, 'sideTrouserFold', [0.035, 0.155, 0.19], [side * 0.078, -0.15, 0], navyLight);
-    boxPart(leg, 'trouserLower', [0.18, 0.13, 0.22], [0, -0.22, 0.01], navyDark);
-    boxPart(leg, 'legFrontFacet', [0.105, 0.105, 0.035], [0, -0.215, -0.12], navyLight);
-    boxPart(leg, 'ankleBlock', [0.145, 0.045, 0.20], [0, -0.285, 0.025], 0x274358);
-    boxPart(leg, 'boot', [0.20, 0.1, 0.28], [0, -0.32, -0.025], 0x263038);
-    boxPart(leg, 'bootToe', [0.17, 0.055, 0.055], [0, -0.315, -0.145], 0x3f4b51);
-    boxPart(leg, 'bootBand', [0.185, 0.025, 0.255], [0, -0.34, -0.028], 0xa4a9a5);
-    boxPart(leg, 'bootSideDark', [0.045, 0.075, 0.22], [side * 0.085, -0.32, -0.02], 0x11181d);
-    boxPart(leg, 'toeHighlight', [0.075, 0.025, 0.025], [0, -0.292, -0.18], 0x5b6467);
-    boxPart(leg, 'sole', [0.2, 0.035, 0.265], [0, -0.38, -0.03], 0x14191d);
+    leg.position.set(side * 0.10, hipY, 0);
+    boxPart(leg, 'thigh', [0.20, 0.26, 0.20], [0, -0.13, 0], navy);
+    boxPart(leg, 'shin', [0.16, 0.28, 0.17], [0, -0.40, 0.01], navyDark);
+    boxPart(leg, 'boot', [0.20, 0.16, 0.26], [0, -0.62, -0.02], bootColor);
+    boxPart(leg, 'bootSole', [0.20, 0.03, 0.26], [0, -0.705, -0.02], bagDarker);
     visual.add(leg);
     return leg;
   }
@@ -1464,36 +1349,6 @@ function makePlayer() {
   const rightArm = makeArm(1);
   const leftLeg = makeLeg(-1);
   const rightLeg = makeLeg(1);
-
-  const backpack = new THREE.Group();
-  backpack.position.set(0, 0.55, 0.205);
-  boxPart(backpack, 'packMain', [0.36, 0.35, 0.20], [0, 0, 0], 0x26323a);
-  boxPart(backpack, 'packBackVolume', [0.28, 0.28, 0.08], [0, -0.02, 0.14], 0x151d23);
-  boxPart(backpack, 'packTop', [0.31, 0.075, 0.215], [0, 0.18, 0], 0x3c4850);
-  boxPart(backpack, 'packTopStep', [0.23, 0.05, 0.22], [0, 0.235, 0.015], 0x48555d);
-  boxPart(backpack, 'packSideL', [0.065, 0.25, 0.21], [-0.19, -0.015, 0], 0x171f25);
-  boxPart(backpack, 'packSideR', [0.065, 0.25, 0.21], [0.19, -0.015, 0], 0x171f25);
-  boxPart(backpack, 'packPocket', [0.26, 0.15, 0.075], [0, -0.07, 0.13], 0x171f25);
-  boxPart(backpack, 'packPocketFlap', [0.23, 0.05, 0.085], [0, 0.015, 0.165], 0x465159);
-  boxPart(backpack, 'packBuckle', [0.045, 0.05, 0.03], [0, -0.035, 0.21], 0x9da6a8);
-  boxPart(backpack, 'packBottom', [0.31, 0.07, 0.205], [0, -0.19, 0], 0x151d23);
-  boxPart(backpack, 'packCenterRidge', [0.05, 0.31, 0.04], [0, 0, 0.185], 0x59666d);
-  boxPart(backpack, 'packLeftTile', [0.085, 0.11, 0.045], [-0.095, -0.06, 0.19], 0x303c43);
-  boxPart(backpack, 'packRightTile', [0.085, 0.11, 0.045], [0.095, -0.06, 0.19], 0x10171c);
-  boxPart(backpack, 'packSidePocketL', [0.05, 0.13, 0.11], [-0.22, -0.07, 0.045], 0x222d33);
-  boxPart(backpack, 'packSidePocketR', [0.05, 0.13, 0.11], [0.22, -0.07, 0.045], 0x222d33);
-  for (let row = 0; row < 3; row++) {
-    for (let col = 0; col < 4; col++) {
-      voxelTile(backpack, `packVoxel${row}_${col}`, -0.108 + col * 0.072, 0.095 - row * 0.075, 0.235, (row + col) % 2 ? 0x10171c : 0x3f4b51, 0.95);
-    }
-  }
-  boxPart(backpack, 'strapL', [0.055, 0.36, 0.035], [-0.14, 0, -0.1], 0x171f25);
-  boxPart(backpack, 'strapR', [0.055, 0.36, 0.035], [0.14, 0, -0.1], 0x171f25);
-  boxPart(backpack, 'strapHighlightL', [0.018, 0.30, 0.018], [-0.118, 0.01, -0.126], 0x455058);
-  boxPart(backpack, 'strapHighlightR', [0.018, 0.30, 0.018], [0.118, 0.01, -0.126], 0x455058);
-  visual.add(backpack);
-
-  visual.scale.y = bodyScale;
 
   root.userData = { visual, leftArm, rightArm, leftLeg, rightLeg };
   root.rotation.y = 0;
