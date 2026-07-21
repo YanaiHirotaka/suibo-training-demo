@@ -1277,25 +1277,27 @@ function makePlayer() {
   const bagDarker = 0x14191d;
   const bootColor = 0x262b30;
 
-  const hipY = 0.70;
-  const shoulderY = 1.05;
-  const headY = 1.26;
+  // Legs shortened to ~1/4 length (leg.scale.y below); hip/shoulder/head moved
+  // down by the same amount so the shorter legs still reach the ground.
+  const hipY = 0.18;
+  const shoulderY = 0.53;
+  const headY = 0.74;
 
   // Coat: chest/back mass, wide shoulder yoke, flared hem, zipper and pockets.
-  boxPart(visual, 'coatMain', [0.42, 0.36, 0.28], [0, 0.90, 0.01], yellow);
-  boxPart(visual, 'coatBack', [0.36, 0.30, 0.10], [0, 0.87, 0.15], yellowDark);
-  boxPart(visual, 'shoulderYoke', [0.50, 0.09, 0.30], [0, 1.055, 0.01], yellowLight);
-  boxPart(visual, 'collarFront', [0.16, 0.06, 0.05], [0, 1.06, -0.13], yellowDark);
-  boxPart(visual, 'zipper', [0.025, 0.34, 0.02], [0, 0.90, -0.145], 0xffdf55);
-  boxPart(visual, 'hem', [0.46, 0.07, 0.30], [0, 0.705, 0.02], yellowDark);
-  boxPart(visual, 'pocketL', [0.10, 0.07, 0.02], [-0.14, 0.80, -0.135], yellowDark);
-  boxPart(visual, 'pocketR', [0.10, 0.07, 0.02], [0.14, 0.80, -0.135], yellowDark);
-  boxPart(visual, 'sideSeamL', [0.03, 0.28, 0.24], [-0.205, 0.86, 0.01], yellowShadow);
-  boxPart(visual, 'sideSeamR', [0.03, 0.28, 0.24], [0.205, 0.86, 0.01], yellowLight);
+  boxPart(visual, 'coatMain', [0.42, 0.36, 0.28], [0, 0.38, 0.01], yellow);
+  boxPart(visual, 'coatBack', [0.36, 0.30, 0.10], [0, 0.35, 0.15], yellowDark);
+  boxPart(visual, 'shoulderYoke', [0.50, 0.09, 0.30], [0, 0.535, 0.01], yellowLight);
+  boxPart(visual, 'collarFront', [0.16, 0.06, 0.05], [0, 0.54, -0.13], yellowDark);
+  boxPart(visual, 'zipper', [0.025, 0.34, 0.02], [0, 0.38, -0.145], 0xffdf55);
+  boxPart(visual, 'hem', [0.46, 0.07, 0.30], [0, 0.185, 0.02], yellowDark);
+  boxPart(visual, 'pocketL', [0.10, 0.07, 0.02], [-0.14, 0.28, -0.135], yellowDark);
+  boxPart(visual, 'pocketR', [0.10, 0.07, 0.02], [0.14, 0.28, -0.135], yellowDark);
+  boxPart(visual, 'sideSeamL', [0.03, 0.28, 0.24], [-0.205, 0.34, 0.01], yellowShadow);
+  boxPart(visual, 'sideSeamR', [0.03, 0.28, 0.24], [0.205, 0.34, 0.01], yellowLight);
 
   // Black backpack, own group so straps/flap move as a unit with the torso.
   const backpack = new THREE.Group();
-  backpack.position.set(0, 0.90, 0.20);
+  backpack.position.set(0, 0.38, 0.20);
   boxPart(backpack, 'packMain', [0.32, 0.34, 0.16], [0, 0, 0.02], bagDark);
   boxPart(backpack, 'packFlap', [0.26, 0.06, 0.17], [0, 0.155, 0.015], 0x30393f);
   boxPart(backpack, 'packPocket', [0.22, 0.12, 0.06], [0, -0.10, 0.06], bagDarker);
@@ -1337,6 +1339,7 @@ function makePlayer() {
   function makeLeg(side) {
     const leg = new THREE.Group();
     leg.position.set(side * 0.10, hipY, 0);
+    leg.scale.y = 0.25;
     boxPart(leg, 'thigh', [0.20, 0.26, 0.20], [0, -0.13, 0], navy);
     boxPart(leg, 'shin', [0.16, 0.28, 0.17], [0, -0.40, 0.01], navyDark);
     boxPart(leg, 'boot', [0.20, 0.16, 0.26], [0, -0.62, -0.02], bootColor);
@@ -1601,7 +1604,7 @@ function updatePlayer(dt) {
 }
 
 function updateCamera(dt) {
-  cameraTarget.set(player.position.x, player.position.y + 1.02, player.position.z);
+  cameraTarget.set(player.position.x, player.position.y + 0.64, player.position.z);
   const lookUpAmount = Math.max(0, -cameraPitch);
   cameraLookTarget.set(
     cameraTarget.x,
@@ -1611,10 +1614,10 @@ function updateCamera(dt) {
   const horizontal = Math.cos(cameraPitch) * cameraDistance;
   desiredCamera.set(
     cameraTarget.x + Math.sin(cameraYaw) * horizontal,
-    cameraTarget.y + Math.sin(cameraPitch) * cameraDistance + 0.53,
+    cameraTarget.y + Math.sin(cameraPitch) * cameraDistance + 0.33,
     cameraTarget.z + Math.cos(cameraYaw) * horizontal
   );
-  desiredCamera.y = Math.max(desiredCamera.y, player.position.y + 0.27);
+  desiredCamera.y = Math.max(desiredCamera.y, player.position.y + 0.17);
   camera.position.lerp(desiredCamera, 1 - Math.exp(-10 * dt));
   camera.lookAt(cameraLookTarget);
 }
