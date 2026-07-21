@@ -512,10 +512,10 @@ function terrainTileY(blockX, blockZ, baseY) {
 const grassTileMaterial = new THREE.MeshLambertMaterial({ map: grassTexture, color: 0xffffff });
 const roadTileMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff });
 const riverTileMaterial = new THREE.MeshStandardMaterial({
-  color: 0xffffff,
+  color: 0x0f3d63,
   roughness: 0.18,
   metalness: 0.04,
-  emissive: 0x031d31,
+  emissive: 0x021524,
   emissiveIntensity: 0.13,
   transparent: true,
   opacity: 0.94
@@ -730,7 +730,7 @@ function createRiver() {
 
   const surfaceMaterial = new THREE.MeshBasicMaterial({
     map: riverSurfaceTexture,
-    color: 0x2f82aa,
+    color: 0x155a86,
     transparent: true,
     opacity: 0.62,
     depthWrite: false
@@ -1275,6 +1275,11 @@ function makePlayer() {
   const hair = 0x4e3426;
   const hairLight = 0x6a4730;
 
+  // Taller, less-chibi proportions: stretch the whole body (torso/arms/legs) vertically
+  // while the head counter-scales to keep its original absolute size.
+  const bodyScale = 1.6;
+  const legExtraScale = 1.25;
+
   // Raincoat body: layered panels replace one oversized torso block.
   boxPart(visual, 'coatCore', [0.40, 0.32, 0.30], [0, 0.55, 0.01], yellow);
   boxPart(visual, 'coatChestVolume', [0.31, 0.22, 0.055], [0, 0.57, -0.166], yellowSoft);
@@ -1341,6 +1346,7 @@ function makePlayer() {
   }
 
   const head = boxPart(visual, 'head', [0.31, 0.27, 0.31], [0, 0.84, -0.01], skin);
+  head.scale.y = 1 / bodyScale;
   boxPart(head, 'hoodTop', [0.30, 0.07, 0.36], [0, 0.135, 0.018], yellowLight);
   boxPart(head, 'hoodTopLeft', [0.09, 0.07, 0.33], [-0.13, 0.105, 0.018], yellow);
   boxPart(head, 'hoodTopRight', [0.09, 0.07, 0.33], [0.13, 0.105, 0.018], yellow);
@@ -1434,7 +1440,9 @@ function makePlayer() {
 
   function makeLeg(side) {
     const leg = new THREE.Group();
-    leg.position.set(side * 0.115, 0.39, 0);
+    // Hip raised to compensate for legExtraScale so the boots still meet the ground.
+    leg.position.set(side * 0.115, 0.493, 0);
+    leg.scale.y = legExtraScale;
     boxPart(leg, 'trouserTop', [0.19, 0.17, 0.24], [0, -0.08, 0.01], navy);
     boxPart(leg, 'trouserBackMass', [0.145, 0.145, 0.07], [0, -0.09, 0.145], navyDark);
     boxPart(leg, 'knee', [0.13, 0.07, 0.025], [0, -0.16, -0.11], 0x2b4c60);
@@ -1484,6 +1492,8 @@ function makePlayer() {
   boxPart(backpack, 'strapHighlightL', [0.018, 0.30, 0.018], [-0.118, 0.01, -0.126], 0x455058);
   boxPart(backpack, 'strapHighlightR', [0.018, 0.30, 0.018], [0.118, 0.01, -0.126], 0x455058);
   visual.add(backpack);
+
+  visual.scale.y = bodyScale;
 
   root.userData = { visual, leftArm, rightArm, leftLeg, rightLeg };
   root.rotation.y = 0;
@@ -1736,7 +1746,7 @@ function updatePlayer(dt) {
 }
 
 function updateCamera(dt) {
-  cameraTarget.set(player.position.x, player.position.y + 0.67, player.position.z);
+  cameraTarget.set(player.position.x, player.position.y + 1.02, player.position.z);
   const lookUpAmount = Math.max(0, -cameraPitch);
   cameraLookTarget.set(
     cameraTarget.x,
@@ -1746,10 +1756,10 @@ function updateCamera(dt) {
   const horizontal = Math.cos(cameraPitch) * cameraDistance;
   desiredCamera.set(
     cameraTarget.x + Math.sin(cameraYaw) * horizontal,
-    cameraTarget.y + Math.sin(cameraPitch) * cameraDistance + 0.35,
+    cameraTarget.y + Math.sin(cameraPitch) * cameraDistance + 0.53,
     cameraTarget.z + Math.cos(cameraYaw) * horizontal
   );
-  desiredCamera.y = Math.max(desiredCamera.y, player.position.y + 0.18);
+  desiredCamera.y = Math.max(desiredCamera.y, player.position.y + 0.27);
   camera.position.lerp(desiredCamera, 1 - Math.exp(-10 * dt));
   camera.lookAt(cameraLookTarget);
 }
