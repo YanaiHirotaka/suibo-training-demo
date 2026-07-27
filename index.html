@@ -10,6 +10,8 @@
 <body>
   <canvas id="game" aria-label="水防訓練フィールド"></canvas>
 
+  <div class="fps-counter" id="fpsCounter">-- FPS</div>
+
   <aside class="minimap-panel" aria-label="フィールド全体ミニマップ">
     <header>ミニマップ</header>
     <svg class="minimap-map" id="minimapMap" viewBox="0 0 105 120" preserveAspectRatio="xMidYMid meet" role="img" aria-label="105×120ブロックのフィールドと現在地">
@@ -38,6 +40,75 @@
   <div class="start-guide" id="startGuide">
     <p>クリックして操作開始</p>
     <small>WASD：移動　マウス：カメラ　Shift：走る　Space：ジャンプ</small>
+  </div>
+
+  <div class="edit-panel">
+    <button id="editToggle" type="button">編集モード</button>
+    <div class="edit-tools is-hidden" id="editTools">
+      <header class="edit-tools-title">編集ツール</header>
+
+      <fieldset class="edit-fieldset">
+        <legend>対象</legend>
+        <div class="segmented">
+          <label><input type="radio" name="editTarget" value="tile" checked><span>タイル</span></label>
+          <label><input type="radio" name="editTarget" value="block"><span>ブロック</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="edit-fieldset" id="blockActionRow">
+        <legend>操作</legend>
+        <div class="segmented">
+          <label><input type="radio" name="paintAction" value="build" checked><span>積む</span></label>
+          <label><input type="radio" name="paintAction" value="remove"><span>削除</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="edit-fieldset" id="materialRow">
+        <legend>素材</legend>
+        <div class="segmented">
+          <label><input type="radio" name="paintMaterial" value="road" checked><span>通路</span></label>
+          <label><input type="radio" name="paintMaterial" value="grass"><span>草地</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="edit-fieldset">
+        <legend>ブラシサイズ</legend>
+        <select id="brushSize">
+          <option value="1" selected>1×1</option>
+          <option value="3">3×3</option>
+          <option value="5">5×5</option>
+          <option value="7">7×7</option>
+        </select>
+      </fieldset>
+
+      <div class="edit-tools-footer">
+        <button id="exportPaint" type="button">エクスポート</button>
+        <button id="clearPaint" type="button" class="danger">すべて削除</button>
+      </div>
+      <small>左クリック長押し：編集　右ドラッグ：カメラ<br>変更は自動保存されます</small>
+    </div>
+  </div>
+
+  <div class="character-select" id="characterSelect">
+    <div class="character-select-panel">
+      <h2>キャラクターを選んでください</h2>
+      <div class="character-options">
+        <button class="character-card" data-character="rain" type="button">
+          <span class="character-swatch character-swatch-rain">
+            <span class="swatch-hood"></span>
+            <span class="swatch-body"></span>
+          </span>
+          <span class="character-card-title">レインコートの少年</span>
+        </button>
+        <button class="character-card" data-character="rescue" type="button">
+          <span class="character-swatch character-swatch-rescue">
+            <span class="swatch-helmet"></span>
+            <span class="swatch-body"></span>
+          </span>
+          <span class="character-card-title">救急隊員</span>
+        </button>
+      </div>
+    </div>
   </div>
 
   <script type="module" src="./app.js"></script>

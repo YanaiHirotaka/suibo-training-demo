@@ -2,6 +2,16 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
+const fpsCounter = document.querySelector('#fpsCounter');
+const characterSelect = document.querySelector('#characterSelect');
+const editToggle = document.querySelector('#editToggle');
+const editTools = document.querySelector('#editTools');
+const brushSizeSelect = document.querySelector('#brushSize');
+const exportPaintButton = document.querySelector('#exportPaint');
+const clearPaintButton = document.querySelector('#clearPaint');
+const materialRow = document.querySelector('#materialRow');
+const blockActionRow = document.querySelector('#blockActionRow');
+const characterCards = document.querySelectorAll('.character-card');
 const minimapMap = document.querySelector('#minimapMap');
 const minimapContent = document.querySelector('#minimapContent');
 const minimapFrame = document.querySelector('#minimapFrame');
@@ -20,25 +30,25 @@ const mapConfig = Object.freeze({
   // Block coordinates use the minimap convention: northwest is (0, 0), east is +X, south is +Z.
   blocks: {
     width: 105,
-    depth: 120
+    depth: 195
   },
   cellBlocks: 15,
   playerStartBlock: {
     x: 75,
-    z: 112.5
+    z: 187.5
   },
   structures: {
     startHouse: {
       centerBlock: {
         x: 52.5,
-        z: 107.5
+        z: 182.5
       },
       halfBlocks: 7
     },
     additionalHouses: [
       {
         name: 'SmallBlueHouse',
-        centerBlock: { x: 52.5, z: 87.5 },
+        centerBlock: { x: 52.5, z: 162.5 },
         halfBlocks: 6,
         wallHeightBlocks: 10,
         roofHeightBlocks: 4,
@@ -46,7 +56,7 @@ const mapConfig = Object.freeze({
       },
       {
         name: 'BlockApartment',
-        centerBlock: { x: 52.5, z: 67.5 },
+        centerBlock: { x: 52.5, z: 142.5 },
         halfBlocks: 7,
         wallHeightBlocks: 24,
         roofHeightBlocks: 2,
@@ -59,7 +69,7 @@ const mapConfig = Object.freeze({
     roadFromHouse: {
       widthBlocks: 15,
       gapFromHouseRightBlocks: 5,
-      targetCellFromNorth: 4
+      targetCellFromNorth: 9
     },
     stairsFromRoad: {
       angleDegrees: 60,
@@ -69,10 +79,11 @@ const mapConfig = Object.freeze({
       connectionOverlapBlocks: 2
     },
     river: {
-      // Upstream is the north edge. "Rightから23ブロック目" means x = width - 23.
+      // Upstream is the north edge. "Rightから28ブロック目" means x = width - 28.
+      // Shifted 5 blocks further left than before (both banks, same width).
       upstream: {
-        leftFromRight: 23,
-        rightFromRight: 8
+        leftFromRight: 28,
+        rightFromRight: 13
       },
       downstream: {
         leftFromRight: 14,
@@ -145,10 +156,10 @@ grassTexture.repeat.set(1, 1);
 
 const riverSurfaceTexture = canvasTexture((ctx, size) => {
   const gradient = ctx.createLinearGradient(0, 0, 0, size);
-  gradient.addColorStop(0, '#052f47');
-  gradient.addColorStop(0.38, '#0d5d86');
-  gradient.addColorStop(0.68, '#0a486c');
-  gradient.addColorStop(1, '#031f34');
+  gradient.addColorStop(0, '#0b5a76');
+  gradient.addColorStop(0.38, '#1a92b0');
+  gradient.addColorStop(0.68, '#146f8c');
+  gradient.addColorStop(1, '#0a4a60');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, size, size);
 
@@ -161,8 +172,8 @@ const riverSurfaceTexture = canvasTexture((ctx, size) => {
     const x = random() * size;
     const y = random() * size;
     const w = 22 + random() * 78;
-    const alpha = 0.035 + random() * 0.12;
-    ctx.strokeStyle = `rgba(144, 204, 225, ${alpha})`;
+    const alpha = 0.05 + random() * 0.16;
+    ctx.strokeStyle = `rgba(178, 226, 240, ${alpha})`;
     ctx.lineWidth = 1 + random() * 1.7;
     ctx.beginPath();
     ctx.moveTo(x, y);
@@ -181,8 +192,8 @@ const riverSurfaceTexture = canvasTexture((ctx, size) => {
     const x = random() * size;
     const y = random() * size;
     const w = 34 + random() * 94;
-    const alpha = 0.06 + random() * 0.16;
-    ctx.strokeStyle = `rgba(207, 241, 252, ${alpha})`;
+    const alpha = 0.09 + random() * 0.22;
+    ctx.strokeStyle = `rgba(225, 249, 255, ${alpha})`;
     ctx.lineWidth = 1 + random() * 2.4;
     ctx.beginPath();
     ctx.moveTo(x, y);
@@ -201,7 +212,7 @@ const riverSurfaceTexture = canvasTexture((ctx, size) => {
     const x = random() * size;
     const y = random() * size;
     const w = 10 + random() * 38;
-    ctx.fillStyle = `rgba(0, 20, 34, ${0.10 + random() * 0.18})`;
+    ctx.fillStyle = `rgba(8, 58, 74, ${0.05 + random() * 0.09})`;
     ctx.fillRect(x, y, w, 1 + random() * 2);
   }
 }, 256);
@@ -221,8 +232,8 @@ const riverReflectionTexture = canvasTexture((ctx, size) => {
     const x = random() * size;
     const y = random() * size;
     const w = 44 + random() * 116;
-    const alpha = 0.12 + random() * 0.30;
-    ctx.strokeStyle = `rgba(232, 252, 255, ${alpha})`;
+    const alpha = 0.18 + random() * 0.40;
+    ctx.strokeStyle = `rgba(240, 253, 255, ${alpha})`;
     ctx.lineWidth = 1.1 + random() * 2.8;
     ctx.beginPath();
     ctx.moveTo(x, y);
@@ -242,7 +253,7 @@ const riverReflectionTexture = canvasTexture((ctx, size) => {
     const x = random() * size;
     const y = random() * size;
     const w = 20 + random() * 54;
-    ctx.strokeStyle = `rgba(132, 201, 220, ${0.08 + random() * 0.16})`;
+    ctx.strokeStyle = `rgba(160, 220, 235, ${0.10 + random() * 0.20})`;
     ctx.lineWidth = 1 + random() * 1.8;
     ctx.beginPath();
     ctx.moveTo(x, y);
@@ -338,7 +349,12 @@ function getRoadFromHouseBounds() {
   };
 }
 
+// The map layout is static, so this profile never changes after the first
+// call. It was being recomputed (with trig + object allocations) every
+// single frame via getWalkableHeight -> getRampHeightAt; cache it instead.
+let cachedStairProfile = null;
 function getStairProfile() {
+  if (cachedStairProfile) return cachedStairProfile;
   const road = getRoadFromHouseBounds();
   const stairs = mapConfig.areas.stairsFromRoad;
   const angle = THREE.MathUtils.degToRad(stairs.angleDegrees);
@@ -351,7 +367,7 @@ function getStairProfile() {
     z: -Math.sin(angle)
   };
 
-  return {
+  cachedStairProfile = {
     startX: (road.left + road.right) / 2,
     startZ: road.top,
     forward,
@@ -361,6 +377,7 @@ function getStairProfile() {
     stepRun: stairs.stepRunBlocks,
     overlap: stairs.connectionOverlapBlocks
   };
+  return cachedStairProfile;
 }
 
 function stairLocalPosition(blockX, blockZ) {
@@ -387,6 +404,38 @@ function isRoadBlock(blockX, blockZ) {
     && blockX <= Math.ceil(road.right) - 1
     && blockZ >= Math.floor(road.top)
     && blockZ <= Math.ceil(road.bottom) - 1;
+}
+
+// The straight path continuing north from the top of the stairs to the map
+// edge, over the flattened plateau. Deeply overlaps the angled top of the
+// stairs (about a full stair-width) so the seam between the straight edge
+// and the diagonal ramp edge is buried inside shared coverage instead of
+// sitting right at the jagged boundary between the two shapes.
+let cachedPlateauPathBounds = null;
+function getPlateauPathBounds() {
+  if (cachedPlateauPathBounds) return cachedPlateauPathBounds;
+  const stair = getStairProfile();
+  const halfWidth = Math.floor(stair.width / 2);
+  const centerBlockX = stair.startX + stair.forward.x * stair.length;
+  const topBlockZ = stair.startZ + stair.forward.z * stair.length;
+  cachedPlateauPathBounds = {
+    minBlockX: Math.floor(centerBlockX - halfWidth),
+    maxBlockX: Math.ceil(centerBlockX + halfWidth),
+    endBlockZ: Math.min(tilesDeep, Math.ceil(topBlockZ) + stair.width)
+  };
+  return cachedPlateauPathBounds;
+}
+
+function isPlateauPathBlock(blockX, blockZ) {
+  const bounds = getPlateauPathBounds();
+  if (blockX < bounds.minBlockX || blockX >= bounds.maxBlockX) return false;
+  if (blockZ < 0 || blockZ >= bounds.endBlockZ) return false;
+  // Clip the path's south end along the stairs' top edge (the diagonal line
+  // perpendicular to the stairs' travel direction), so both sides of the
+  // junction meet the ramp at the same diagonal instead of the rectangle's
+  // horizontal bottom cutting past the ramp into the grass.
+  const { along, stair } = stairLocalPosition(blockX + 0.5, blockZ + 0.5);
+  return along >= stair.length;
 }
 
 function houseConfigs() {
@@ -418,9 +467,41 @@ function rampLevelFromAlong(along, stair) {
   return Math.floor(Math.max(0, along) / stair.stepRun);
 }
 
+// Flatten the upper-left area at and beyond the cell that is 8 cells up from
+// the bottom and 3 cells in from the left, to a uniform height of 13 blocks.
+const flattenPlateauHeight = 13;
+const flattenPlateauMaxBlockX = 3 * mapConfig.cellBlocks;
+const flattenPlateauMaxBlockZ = (tilesDeep / mapConfig.cellBlocks - 8 + 1) * mapConfig.cellBlocks;
+
+// Hand-edited height deltas from the in-game "積む/削除" edit tools. Keyed by
+// "x,z", value is a signed integer number of blocks added (or removed, if
+// negative) on top of the procedurally-generated height. River blocks and
+// cells with an actual ramp step are never editable, so they're excluded
+// before this is consulted.
+const heightPaintOverrides = new Map();
+
+// isStairBlock(x, z) marks a much wider along/across polygon than the
+// visible zigzag steps - most of it is flat (baseLevel <= 0) and looks
+// identical to the surrounding grass/road, but used to be hard-excluded
+// from editing anyway, which is why clicks near the road/stairs junction
+// silently did nothing. Only cells with an actual positive ramp height are
+// owned by the ramp mesh and need to stay off-limits.
+function isRampActive(blockX, blockZ) {
+  return isStairBlock(blockX, blockZ) && getBaseTerrainHeightBlocks(blockX, blockZ) > 0;
+}
+
 function getTerrainHeightBlocks(blockX, blockZ) {
+  const base = getBaseTerrainHeightBlocks(blockX, blockZ);
+  if (isRiverBlock(blockX, blockZ) || isRampActive(blockX, blockZ)) return base;
+  const delta = heightPaintOverrides.get(blockX + ',' + blockZ);
+  if (!delta) return base;
+  return THREE.MathUtils.clamp(base + delta, 0, 40);
+}
+
+function getBaseTerrainHeightBlocks(blockX, blockZ) {
   if (blockX < 0 || blockX >= tilesWide || blockZ < 0 || blockZ >= tilesDeep) return 0;
   if (isRiverBlock(blockX, blockZ)) return 0;
+  if (blockX < flattenPlateauMaxBlockX && blockZ < flattenPlateauMaxBlockZ) return flattenPlateauHeight;
 
   const { along, across, stair } = stairLocalPosition(blockX + 0.5, blockZ + 0.5);
   if (along < 0) return 0;
@@ -443,8 +524,21 @@ function getTerrainHeightBlocks(blockX, blockZ) {
   const rawRiverDrop = Math.max(0, Math.ceil((riverSlopeWidth - distanceToRiver) / 5));
   const riverInfluence = THREE.MathUtils.clamp((sideDistanceFromRamp - sameHeightShoulderWidth - 4) / 14, 0, 1);
   const riverDrop = Math.floor(rawRiverDrop * riverInfluence);
-  const height = Math.max(0, baseLevel - shoulderDrop - riverDrop);
-  return isBeyondRampEnd ? height : terrainHeightLimitedByHouses(blockX, blockZ, height);
+  const maxRampHeight = 13;
+  const height = Math.min(maxRampHeight, Math.max(0, baseLevel - shoulderDrop - riverDrop));
+  // Apply the house-proximity height limit everywhere, including past the
+  // ramp's end - otherwise the field just beyond the last step is exempt
+  // from it while the last step itself isn't, creating a sudden cliff. Beyond
+  // the ramp, use the frozen boundary position (not the real, ever-further
+  // blockX/blockZ) so the limit itself stays flat too, instead of climbing
+  // again as the field gets farther from nearby houses.
+  const limitBlockX = isBeyondRampEnd
+    ? Math.floor(stair.startX + stair.forward.x * levelAlong + stair.across.x * across)
+    : blockX;
+  const limitBlockZ = isBeyondRampEnd
+    ? Math.floor(stair.startZ + stair.forward.z * levelAlong + stair.across.z * across)
+    : blockZ;
+  return terrainHeightLimitedByHouses(limitBlockX, limitBlockZ, height);
 }
 
 function getTerrainHeightAt(x, z) {
@@ -466,20 +560,85 @@ const rampSurfaceThickness = 0.072;
 const tileGeometry = new THREE.BoxGeometry(tileSize - 0.003, tileSurfaceThickness, tileSize - 0.003);
 const tileMatrix = new THREE.Matrix4();
 const tileColor = new THREE.Color();
-const grassTileCells = [];
-const roadTileCells = [];
-const riverTileCells = [];
 
-for (let z = 0; z < tilesDeep; z++) {
-  for (let x = 0; x < tilesWide; x++) {
-    if (isRiverBlock(x, z)) riverTileCells.push([x, z]);
-    else if (isRoadBlock(x, z)) roadTileCells.push([x, z]);
-    else if (isStairBlock(x, z)) {
-      // The block ramp generates its own asphalt top. Do not place a ground tile
-      // here too, otherwise the two coplanar surfaces flicker.
+// Hand-painted road/grass overrides from the in-game edit mode. Keyed by
+// "x,z", value is 'road' or 'grass'. Baked in below as the shipped defaults
+// (from an exported tile-paint-overrides.json), then localStorage edits from
+// this browser are layered on top so further in-game tweaks still persist.
+const DEFAULT_TILE_OVERRIDES = [
+  ["75,126", "road"], ["76,126", "road"], ["76,125", "road"], ["77,126", "road"],
+  ["78,126", "road"], ["77,125", "road"], ["25,91", "road"], ["25,90", "road"],
+  ["27,90", "road"], ["27,85", "road"], ["27,86", "road"], ["27,88", "road"],
+  ["27,87", "road"], ["26,87", "road"], ["26,88", "road"], ["26,89", "road"],
+  ["25,89", "road"], ["26,90", "road"], ["27,89", "road"], ["26,91", "road"],
+  ["27,91", "road"], ["27,92", "road"], ["13,109", "grass"], ["13,108", "grass"],
+  ["13,107", "grass"], ["14,107", "grass"], ["14,106", "grass"], ["13,106", "grass"],
+  ["13,105", "grass"], ["16,103", "grass"], ["15,102", "grass"], ["14,101", "grass"],
+  ["13,100", "grass"], ["13,101", "grass"], ["14,102", "grass"], ["13,102", "grass"],
+  ["14,103", "grass"], ["13,103", "grass"], ["13,104", "grass"], ["14,104", "grass"],
+  ["14,105", "grass"], ["15,105", "grass"], ["15,104", "grass"], ["15,103", "grass"],
+  ["32,95", "road"], ["31,94", "road"], ["30,93", "road"], ["29,92", "road"],
+  ["28,91", "road"], ["28,92", "road"], ["29,93", "road"], ["30,94", "road"]
+];
+
+const DEFAULT_HEIGHT_OVERRIDES = [
+  ["64,133", -1], ["65,133", -1], ["64,134", -1], ["64,132", -1],
+  ["63,131", -1], ["13,109", -1], ["12,110", -1], ["12,109", -1]
+];
+
+const PAINT_STORAGE_KEY = 'suiboTilePaintOverrides';
+const tilePaintOverrides = new Map(DEFAULT_TILE_OVERRIDES);
+try {
+  const saved = JSON.parse(localStorage.getItem(PAINT_STORAGE_KEY) || '[]');
+  for (const [key, value] of saved) tilePaintOverrides.set(key, value);
+} catch (error) {
+  console.warn('Could not load paint overrides:', error);
+}
+
+const HEIGHT_STORAGE_KEY = 'suiboHeightPaintOverrides';
+for (const [key, value] of DEFAULT_HEIGHT_OVERRIDES) heightPaintOverrides.set(key, value);
+try {
+  const savedHeights = JSON.parse(localStorage.getItem(HEIGHT_STORAGE_KEY) || '[]');
+  for (const [key, value] of savedHeights) heightPaintOverrides.set(key, value);
+} catch (error) {
+  console.warn('Could not load height overrides:', error);
+}
+
+function baseTileType(x, z) {
+  if (isRiverBlock(x, z)) return 'river';
+  if (isRoadBlock(x, z)) return 'road';
+  // The block ramp generates its own asphalt top. Do not place a ground tile
+  // there too, otherwise the two coplanar surfaces flicker. Checked before
+  // the plateau path so the deep overlap between the ramp and the straight
+  // path doesn't get double-covered.
+  if (isRampActive(x, z)) return 'stair';
+  if (isPlateauPathBlock(x, z)) return 'road';
+  return 'grass';
+}
+
+function tileTypeAt(x, z) {
+  const base = baseTileType(x, z);
+  // River is the only base type that can never be painted over (it isn't
+  // a ground tile at all). Stair steps can be repainted: when they are,
+  // createBlockRamp skips drawing its own asphalt for that cell so the
+  // flat road/grass tile system takes over instead.
+  if (base === 'river') return base;
+  return tilePaintOverrides.get(x + ',' + z) || base;
+}
+
+function computeTileCells() {
+  const grass = [];
+  const road = [];
+  const river = [];
+  for (let z = 0; z < tilesDeep; z++) {
+    for (let x = 0; x < tilesWide; x++) {
+      const type = tileTypeAt(x, z);
+      if (type === 'river') river.push([x, z]);
+      else if (type === 'road') road.push([x, z]);
+      else if (type === 'grass') grass.push([x, z]);
     }
-    else grassTileCells.push([x, z]);
   }
+  return { grass, road, river };
 }
 
 function createGroundTiles(name, cells, material, getY, setColor) {
@@ -512,41 +671,55 @@ function terrainTileY(blockX, blockZ, baseY) {
 const grassTileMaterial = new THREE.MeshLambertMaterial({ map: grassTexture, color: 0xffffff });
 const roadTileMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff });
 const riverTileMaterial = new THREE.MeshStandardMaterial({
-  color: 0x0f3d63,
-  roughness: 0.18,
-  metalness: 0.04,
-  emissive: 0x021524,
-  emissiveIntensity: 0.13,
+  color: 0x2aa5b8,
+  roughness: 0.08,
+  metalness: 0.18,
+  emissive: 0x1a5568,
+  emissiveIntensity: 0.22,
   transparent: true,
   opacity: 0.94
 });
 
-const grassTiles = createGroundTiles(
-  'GrassGroundBlocks',
-  grassTileCells,
-  grassTileMaterial,
-  (x, z) => terrainTileY(x, z, 0.005 + ((x * 17 + z * 31) % 7) * 0.001),
-  (x, z, color) => {
-    const shade = 0.96 + Math.sin(x * 12.47 + z * 7.31) * 0.025 + Math.cos(z * 2.9) * 0.012;
-    color.setRGB(shade, shade, shade * 0.97);
-  }
-);
+let grassTiles = null;
+let roadTiles = null;
 
-const roadTiles = createGroundTiles(
-  'RoadGroundBlocks',
-  roadTileCells,
-  roadTileMaterial,
-  (x, z) => terrainTileY(x, z, 0.026 + ((x * 23 + z * 31) % 5) * 0.003),
-  (x, z, color) => {
-    const roadBase = 0.58 + ((x * 11 + z * 13) % 9) * 0.018;
-    const warm = ((x + z) % 4) * 0.015;
-    color.setRGB(roadBase + warm, roadBase * 0.96 + warm, roadBase * 0.90);
-  }
-);
+// Grass and road tiles are rebuilt whenever the paint overrides change.
+// The shared tileGeometry/materials are reused, so only the InstancedMesh
+// itself is thrown away.
+function buildPaintableTiles() {
+  const cells = computeTileCells();
+  if (grassTiles) field.remove(grassTiles);
+  if (roadTiles) field.remove(roadTiles);
+
+  grassTiles = createGroundTiles(
+    'GrassGroundBlocks',
+    cells.grass,
+    grassTileMaterial,
+    (x, z) => terrainTileY(x, z, 0.005 + ((x * 17 + z * 31) % 7) * 0.001),
+    (x, z, color) => {
+      const shade = 0.96 + Math.sin(x * 12.47 + z * 7.31) * 0.025 + Math.cos(z * 2.9) * 0.012;
+      color.setRGB(shade, shade, shade * 0.97);
+    }
+  );
+
+  roadTiles = createGroundTiles(
+    'RoadGroundBlocks',
+    cells.road,
+    roadTileMaterial,
+    (x, z) => terrainTileY(x, z, 0.026 + ((x * 23 + z * 31) % 5) * 0.003),
+    (x, z, color) => {
+      const roadBase = 0.58 + ((x * 11 + z * 13) % 9) * 0.018;
+      const warm = ((x + z) % 4) * 0.015;
+      color.setRGB(roadBase + warm, roadBase * 0.96 + warm, roadBase * 0.90);
+    }
+  );
+}
+
+buildPaintableTiles();
 
 const riverGroundTiles = createGroundTiles(
   'RiverGroundBlocks',
-  riverTileCells,
+  computeTileCells().river,
   riverTileMaterial,
   (x, z) => 0.028 + ((x * 13 + z * 29) % 5) * 0.002,
   (x, z, color) => {
@@ -558,13 +731,38 @@ const riverGroundTiles = createGroundTiles(
 
 function createTerrainFillBlocks() {
   const cells = [];
+  // Cache column heights: each column is looked up as a neighbor up to 4 extra
+  // times, and getTerrainHeightBlocks itself isn't cheap (river/ramp math).
+  const heightCache = new Map();
+  function heightAt(x, z) {
+    const key = x * 100000 + z;
+    let h = heightCache.get(key);
+    if (h === undefined) {
+      h = getTerrainHeightBlocks(x, z);
+      heightCache.set(key, h);
+    }
+    return h;
+  }
+
   for (let z = 0; z < tilesDeep; z++) {
     for (let x = 0; x < tilesWide; x++) {
       if (isRiverBlock(x, z)) continue;
-      if (isStairBlock(x, z)) continue;
+      if (isRampActive(x, z)) continue;
 
-      const heightBlocks = getTerrainHeightBlocks(x, z);
+      const heightBlocks = heightAt(x, z);
+      if (heightBlocks <= 0) continue;
+      // A cube fully boxed in by same-or-taller neighbors on all 4 sides (and
+      // covered above by the next cube up) is never visible - skip it. Only
+      // the top cap and cubes with an exposed side toward a shorter neighbor
+      // actually need to be drawn.
+      const minNeighbor = Math.min(
+        heightAt(x, z - 1),
+        heightAt(x, z + 1),
+        heightAt(x + 1, z),
+        heightAt(x - 1, z)
+      );
       for (let y = 0; y < heightBlocks; y++) {
+        if (y < heightBlocks - 1 && y < minNeighbor) continue;
         cells.push({ x, y, z, heightBlocks });
       }
     }
@@ -605,7 +803,12 @@ function createTerrainFillBlocks() {
   return mesh;
 }
 
-const terrainFillBlocks = createTerrainFillBlocks();
+let terrainFillBlocks = null;
+function buildTerrainFillBlocks() {
+  if (terrainFillBlocks) field.remove(terrainFillBlocks);
+  terrainFillBlocks = createTerrainFillBlocks();
+}
+buildTerrainFillBlocks();
 
 scene.add(field);
 
@@ -613,18 +816,24 @@ scene.add(field);
 const tuftGeometry = new THREE.BoxGeometry(0.16, 0.055, 0.16);
 const tuftMaterial = new THREE.MeshLambertMaterial({ color: 0x4f9639 });
 const tufts = new THREE.InstancedMesh(tuftGeometry, tuftMaterial, 900);
-for (let i = 0; i < 900; i++) {
-  const x = ((i * 47) % 997) / 997 * (fieldWidth - 1) - (halfFieldWidth - 0.5);
-  const z = ((i * 83 + 19) % 991) / 991 * (fieldDepth - 1) - (halfFieldDepth - 0.5);
-  const blockX = Math.floor(blockXFromWorld(x));
-  const blockZ = Math.floor(blockZFromWorld(z));
-  if (isRiverBlock(blockX, blockZ) || isRoadBlock(blockX, blockZ) || isStairBlock(blockX, blockZ)) {
-    tileMatrix.makeScale(0, 0, 0);
-  } else {
-    tileMatrix.makeTranslation(x, getTerrainHeightBlocks(blockX, blockZ) * tileSize + 0.13, z);
+
+function updateTufts() {
+  for (let i = 0; i < 900; i++) {
+    const x = ((i * 47) % 997) / 997 * (fieldWidth - 1) - (halfFieldWidth - 0.5);
+    const z = ((i * 83 + 19) % 991) / 991 * (fieldDepth - 1) - (halfFieldDepth - 0.5);
+    const blockX = Math.floor(blockXFromWorld(x));
+    const blockZ = Math.floor(blockZFromWorld(z));
+    if (tileTypeAt(blockX, blockZ) !== 'grass') {
+      tileMatrix.makeScale(0, 0, 0);
+    } else {
+      tileMatrix.makeTranslation(x, getTerrainHeightBlocks(blockX, blockZ) * tileSize + 0.13, z);
+    }
+    tufts.setMatrixAt(i, tileMatrix);
   }
-  tufts.setMatrixAt(i, tileMatrix);
+  tufts.instanceMatrix.needsUpdate = true;
 }
+
+updateTufts();
 tufts.receiveShadow = true;
 field.add(tufts);
 
@@ -730,9 +939,9 @@ function createRiver() {
 
   const surfaceMaterial = new THREE.MeshBasicMaterial({
     map: riverSurfaceTexture,
-    color: 0x155a86,
+    color: 0x3fb8cf,
     transparent: true,
-    opacity: 0.62,
+    opacity: 0.72,
     depthWrite: false
   });
   const surface = new THREE.Mesh(createRiverSurfaceGeometry(0.166), surfaceMaterial);
@@ -742,9 +951,9 @@ function createRiver() {
 
   const reflectionMaterial = new THREE.MeshBasicMaterial({
     map: riverReflectionTexture,
-    color: 0xe8fbff,
+    color: 0xf3feff,
     transparent: true,
-    opacity: 0.52,
+    opacity: 0.7,
     depthWrite: false
   });
   const reflection = new THREE.Mesh(createRiverSurfaceGeometry(0.174), reflectionMaterial);
@@ -754,9 +963,9 @@ function createRiver() {
 
   const shimmerGeometry = new THREE.BoxGeometry(tileSize * 0.62, 0.012, tileSize * 0.18);
   const shimmerMaterial = new THREE.MeshBasicMaterial({
-    color: 0xc7efff,
+    color: 0xd6f5ff,
     transparent: true,
-    opacity: 0.5
+    opacity: 0.58
   });
   const shimmer = new THREE.InstancedMesh(shimmerGeometry, shimmerMaterial, shimmerCells.length);
   shimmer.name = 'RiverHighlights';
@@ -775,9 +984,9 @@ function createRiver() {
   const flowCount = 36;
   const flowGeometry = new THREE.BoxGeometry(tileSize * 1.25, 0.018, tileSize * 0.16);
   const flowMaterial = new THREE.MeshBasicMaterial({
-    color: 0xe6fbff,
+    color: 0xf0fdff,
     transparent: true,
-    opacity: 0.68
+    opacity: 0.74
   });
   const flowHighlights = new THREE.InstancedMesh(flowGeometry, flowMaterial, flowCount);
   flowHighlights.name = 'RiverFlowHighlights';
@@ -1131,34 +1340,55 @@ function createConfiguredBuilding(config) {
 mapConfig.structures.additionalHouses.forEach(createConfiguredBuilding);
 
 function createBlockRamp() {
-  const stair = getStairProfile();
-  const halfWidth = Math.floor(stair.width / 2);
   const topCells = [];
   const fillCells = [];
 
-  for (let pathBlock = 0; pathBlock < stair.length; pathBlock++) {
-    const along = pathBlock + 0.5;
-    for (let across = -halfWidth; across <= halfWidth; across++) {
-      const blockX = stair.startX + stair.forward.x * along + stair.across.x * across;
-      const blockZ = stair.startZ + stair.forward.z * along + stair.across.z * across;
-      const gridX = Math.floor(blockX);
-      const gridZ = Math.floor(blockZ);
-      if (isRoadBlock(gridX, gridZ)) continue;
+  // Cache column heights: each column is looked up as a neighbor several
+  // extra times and getTerrainHeightBlocks isn't cheap.
+  const heightCache = new Map();
+  function heightAt(x, z) {
+    const key = x * 100000 + z;
+    let h = heightCache.get(key);
+    if (h === undefined) {
+      h = getTerrainHeightBlocks(x, z);
+      heightCache.set(key, h);
+    }
+    return h;
+  }
 
-      const level = getTerrainHeightBlocks(gridX, gridZ);
-      topCells.push({ pathBlock, across, level, blockX, blockZ });
+  // Walk the grid directly (instead of sampling along the stairs' diagonal
+  // axis) so every grid cell in the stair band gets exactly one top block.
+  // Diagonal sampling missed cells and doubled others, leaving dirt holes
+  // and jagged doubled edges where the stairs met the flat road tiles.
+  for (let z = 0; z < tilesDeep; z++) {
+    for (let x = 0; x < tilesWide; x++) {
+      if (!isRampActive(x, z)) continue;
+      if (isRoadBlock(x, z)) continue;
+      const level = heightAt(x, z);
+      // A step repainted via the in-game edit tools is drawn by the flat
+      // road/grass ground tile system instead (buildPaintableTiles), at the
+      // same height - skip the asphalt top here so the two don't overlap.
+      if (tileTypeAt(x, z) === 'stair') topCells.push({ x, z, level });
+
+      // Same interior-cube culling as the main terrain fill: a cube boxed in
+      // by same-or-taller neighbors on all 4 sides is never visible.
+      const minNeighbor = Math.min(
+        heightAt(x, z - 1),
+        heightAt(x, z + 1),
+        heightAt(x + 1, z),
+        heightAt(x - 1, z)
+      );
       for (let y = 0; y < level; y++) {
-        fillCells.push({ pathBlock, across, level, y, blockX, blockZ });
+        if (y < level - 1 && y < minNeighbor) continue;
+        fillCells.push({ x, z, y });
       }
     }
   }
 
+  // Same material and per-block colouring as the flat road tiles, so the
+  // stairs read as the same road surface instead of a separate grey asphalt.
   const asphaltGeometry = new THREE.BoxGeometry(tileSize - 0.004, rampSurfaceThickness, tileSize - 0.004);
-  const asphaltMesh = new THREE.InstancedMesh(
-    asphaltGeometry,
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0.01 }),
-    topCells.length
-  );
+  const asphaltMesh = new THREE.InstancedMesh(asphaltGeometry, roadTileMaterial, topCells.length);
   asphaltMesh.name = 'BlockRampAsphaltTops';
 
   const fillMesh = new THREE.InstancedMesh(
@@ -1171,34 +1401,31 @@ function createBlockRamp() {
   const matrix = new THREE.Matrix4();
   const color = new THREE.Color();
 
-  topCells.forEach(({ pathBlock, across, level, blockX, blockZ }, index) => {
+  topCells.forEach(({ x, z, level }, index) => {
     matrix.makeTranslation(
-      worldXFromBlock(blockX),
+      worldXFromBlock(x + 0.5),
       level * tileSize + rampSurfaceThickness / 2,
-      worldZFromBlock(blockZ)
+      worldZFromBlock(z + 0.5)
     );
     asphaltMesh.setMatrixAt(index, matrix);
 
-    const edgeDirt = Math.abs(across) / halfWidth * 0.05;
-    const progress = pathBlock / stair.length;
-    const noise = (((pathBlock * 17 + across * 29) % 11) - 5) * 0.007;
-    const shade = THREE.MathUtils.clamp(0.48 + progress * 0.11 - edgeDirt + noise, 0.34, 0.64);
-    color.setRGB(shade, shade * 0.99, shade * 0.95);
+    const roadBase = 0.58 + ((x * 11 + z * 13) % 9) * 0.018;
+    const warm = ((x + z) % 4) * 0.015;
+    color.setRGB(roadBase + warm, roadBase * 0.96 + warm, roadBase * 0.90);
     asphaltMesh.setColorAt(index, color);
   });
 
-  fillCells.forEach(({ pathBlock, across, y, blockX, blockZ }, index) => {
+  fillCells.forEach(({ x, z, y }, index) => {
     matrix.makeTranslation(
-      worldXFromBlock(blockX),
+      worldXFromBlock(x + 0.5),
       tileSize / 2 + y * tileSize,
-      worldZFromBlock(blockZ)
+      worldZFromBlock(z + 0.5)
     );
     fillMesh.setMatrixAt(index, matrix);
 
-    const edge = Math.abs(across) / halfWidth;
-    const dirtNoise = (((pathBlock * 11 + across * 5 + y * 19) % 9) - 4) * 0.016;
-    const shade = THREE.MathUtils.clamp(0.72 - edge * 0.10 + dirtNoise, 0.48, 0.80);
-    if ((pathBlock + across + y) % 5 === 0) {
+    const dirtNoise = (((x * 11 + z * 5 + y * 19) % 9) - 4) * 0.016;
+    const shade = THREE.MathUtils.clamp(0.72 + dirtNoise, 0.48, 0.80);
+    if ((x + z + y) % 5 === 0) {
       color.setRGB(0.40 * shade, 0.40 * shade, 0.38 * shade);
     } else {
       color.setRGB(0.46 * shade, 0.32 * shade, 0.21 * shade);
@@ -1217,7 +1444,15 @@ function createBlockRamp() {
   return { asphaltMesh, fillMesh };
 }
 
-const blockRamp = createBlockRamp();
+let blockRamp = null;
+function buildBlockRamp() {
+  if (blockRamp) {
+    scene.remove(blockRamp.asphaltMesh);
+    scene.remove(blockRamp.fillMesh);
+  }
+  blockRamp = createBlockRamp();
+}
+buildBlockRamp();
 
 const cloudMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
 const cube = new THREE.BoxGeometry(1, 1, 1);
@@ -1256,82 +1491,205 @@ function voxelTile(parent, name, x, y, z, color, scale = 1) {
   return boxPart(parent, name, [0.036 * scale, 0.036 * scale, 0.026 * scale], [x, y, z], color);
 }
 
-function makePlayer() {
+// Fills a box region with small eye-sized cubes (one InstancedMesh per call,
+// so block count goes way up without adding extra draw calls per cube).
+function voxelBox(parent, name, size, position, color, voxelSize = 0.045) {
+  const [sx, sy, sz] = size;
+  const nx = Math.max(1, Math.round(sx / voxelSize));
+  const ny = Math.max(1, Math.round(sy / voxelSize));
+  const nz = Math.max(1, Math.round(sz / voxelSize));
+  const cellX = sx / nx;
+  const cellY = sy / ny;
+  const cellZ = sz / nz;
+  const geometry = new THREE.BoxGeometry(cellX * 0.94, cellY * 0.94, cellZ * 0.94);
+  const mesh = new THREE.InstancedMesh(geometry, material(color), nx * ny * nz);
+  mesh.name = name;
+  mesh.position.set(...position);
+  const startX = -sx / 2 + cellX / 2;
+  const startY = -sy / 2 + cellY / 2;
+  const startZ = -sz / 2 + cellZ / 2;
+  let index = 0;
+  for (let xi = 0; xi < nx; xi++) {
+    for (let yi = 0; yi < ny; yi++) {
+      for (let zi = 0; zi < nz; zi++) {
+        voxelMatrix.makeTranslation(startX + xi * cellX, startY + yi * cellY, startZ + zi * cellZ);
+        mesh.setMatrixAt(index++, voxelMatrix);
+      }
+    }
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+const voxelMatrix = new THREE.Matrix4();
+
+function makePlayer(type = 'rain') {
   const root = new THREE.Group();
   root.name = 'Player';
   const visual = new THREE.Group();
   root.add(visual);
+  const isRescue = type === 'rescue';
 
-  // Rebuilt from the reference photo: yellow hooded raincoat, black backpack,
-  // navy trousers. Built directly at final (elongated) proportions, feet at y=0.
-  const yellow = 0xe7ad08;
-  const yellowLight = 0xffca19;
-  const yellowDark = 0xb77b05;
-  const yellowShadow = 0x9f6904;
-  const navy = 0x24405a;
-  const navyDark = 0x172a3d;
+  // Shared proportions (both characters use the same skeleton), palette swaps
+  // per type. 'rain': yellow hooded raincoat. 'rescue': orange jumpsuit,
+  // white hard-hat style helmet, black gloves/boots, reflective stripes.
+  const primary = isRescue ? 0xe8641f : 0xe7ad08;
+  const primaryLight = isRescue ? 0xff8a3d : 0xffca19;
+  const primarySoft = isRescue ? 0xff9c52 : 0xf4bc10;
+  const primaryDark = isRescue ? 0xb84c14 : 0xb77b05;
+  const primaryShadow = isRescue ? 0x9c3f10 : 0x9f6904;
+  const legPrimary = isRescue ? primary : 0x24405a;
+  const legPrimaryLight = isRescue ? primaryLight : 0x30506e;
+  const legPrimaryDark = isRescue ? primaryDark : 0x172a3d;
+  const legPrimaryDarkest = isRescue ? 0x7a3a10 : 0x2b4c60;
   const skin = 0xf0b780;
   const skinShadow = 0xd99567;
   const hair = 0x4e3426;
-  const bagDark = 0x232b31;
-  const bagDarker = 0x14191d;
-  const bootColor = 0x262b30;
+  const hairLight = 0x6a4730;
+  const bagDark = isRescue ? 0x2e3236 : 0x232b31;
+  const bagMid = isRescue ? 0x454b50 : 0x3c4850;
+  const bagDarker = isRescue ? 0x1a1d20 : 0x14191d;
+  const bootColor = isRescue ? 0x1c1e22 : 0x262b30;
+  const bootAccent = isRescue ? 0x2e3236 : 0x3f4b51;
+  const zipperColor = isRescue ? 0x4a4d50 : 0xffdf55;
+  const zipperPullColor = isRescue ? 0x33363a : 0x6f571c;
+  const handColor = isRescue ? 0x1c1e22 : skin;
+  const handShadow = isRescue ? 0x0f1113 : skinShadow;
+  const stripeColor = 0xd9d6c8;
+  const beltColor = 0x1c1e22;
+  const metalColor = 0x9da6a8;
+  const helmetColor = 0xf4f2ea;
+  const helmetShadow = 0xd9d4c4;
+  const helmetDark = 0xb8b2a0;
+  const badgeColor = 0xe8641f;
 
-  // Legs shortened to ~1/4 length (leg.scale.y below); hip/shoulder/head moved
-  // down by the same amount so the shorter legs still reach the ground.
-  const hipY = 0.18;
-  const shoulderY = 0.53;
-  const headY = 0.74;
+  // Legs trimmed a bit further; hip/shoulder/head dropped by the same 0.075
+  // so the shorter legs still meet the ground.
+  const hipY = 0.55;
+  const shoulderY = 0.90;
+  const headY = 1.11;
 
-  // Coat: chest/back mass, wide shoulder yoke, flared hem, zipper and pockets.
-  boxPart(visual, 'coatMain', [0.42, 0.36, 0.28], [0, 0.38, 0.01], yellow);
-  boxPart(visual, 'coatBack', [0.36, 0.30, 0.10], [0, 0.35, 0.15], yellowDark);
-  boxPart(visual, 'shoulderYoke', [0.50, 0.09, 0.30], [0, 0.535, 0.01], yellowLight);
-  boxPart(visual, 'collarFront', [0.16, 0.06, 0.05], [0, 0.54, -0.13], yellowDark);
-  boxPart(visual, 'zipper', [0.025, 0.34, 0.02], [0, 0.38, -0.145], 0xffdf55);
-  boxPart(visual, 'hem', [0.46, 0.07, 0.30], [0, 0.185, 0.02], yellowDark);
-  boxPart(visual, 'pocketL', [0.10, 0.07, 0.02], [-0.14, 0.28, -0.135], yellowDark);
-  boxPart(visual, 'pocketR', [0.10, 0.07, 0.02], [0.14, 0.28, -0.135], yellowDark);
-  boxPart(visual, 'sideSeamL', [0.03, 0.28, 0.24], [-0.205, 0.34, 0.01], yellowShadow);
-  boxPart(visual, 'sideSeamR', [0.03, 0.28, 0.24], [0.205, 0.34, 0.01], yellowLight);
+  // Coat/jumpsuit: chest/back mass, wide shoulder yoke, hem, zipper and
+  // pockets, plus raised panels/folds layered on top for depth.
+  voxelBox(visual, 'coatMain', [0.42, 0.36, 0.28], [0, 0.75, 0.01], primary);
+  voxelBox(visual, 'coatBack', [0.36, 0.30, 0.10], [0, 0.72, 0.15], primaryDark);
+  voxelBox(visual, 'shoulderYoke', [0.50, 0.09, 0.30], [0, 0.905, 0.01], primaryLight);
+  voxelBox(visual, 'shoulderBackLip', [0.42, 0.05, 0.08], [0, 0.925, 0.19], primaryDark);
+  // Neck: bridges the gap between the head and shoulders so the head doesn't float.
+  voxelBox(visual, 'neck', [0.16, 0.10, 0.18], [0, 0.955, -0.01], skin);
+  voxelBox(visual, 'neckShadow', [0.18, 0.03, 0.20], [0, 0.90, -0.01], skinShadow);
+  voxelBox(visual, 'collarFront', [0.16, 0.06, 0.05], [0, 0.91, -0.13], primaryDark);
+  voxelBox(visual, 'collarDepth', [0.12, 0.05, 0.06], [0, 0.895, -0.165], primaryShadow);
+  voxelBox(visual, 'zipper', [0.025, 0.34, 0.02], [0, 0.75, -0.145], zipperColor);
+  voxelBox(visual, 'zipperPull', [0.03, 0.04, 0.018], [0.006, 0.60, -0.158], zipperPullColor);
+  voxelBox(visual, 'coatChestPanel', [0.30, 0.20, 0.05], [0, 0.80, -0.155], primarySoft);
+  voxelBox(visual, 'chestRaisedL', [0.09, 0.07, 0.04], [-0.08, 0.83, -0.175], primaryLight);
+  voxelBox(visual, 'chestRaisedR', [0.09, 0.07, 0.04], [0.08, 0.83, -0.175], primary);
+  voxelBox(visual, 'hem', [0.46, 0.07, 0.30], [0, 0.555, 0.02], primaryDark);
+  voxelBox(visual, 'hemShadow', [0.48, 0.02, 0.31], [0, 0.518, 0.02], primaryShadow);
+  voxelBox(visual, 'pocketL', [0.10, 0.07, 0.02], [-0.14, 0.65, -0.135], primaryDark);
+  voxelBox(visual, 'pocketR', [0.10, 0.07, 0.02], [0.14, 0.65, -0.135], primaryDark);
+  voxelBox(visual, 'pocketFlapL', [0.11, 0.02, 0.025], [-0.14, 0.685, -0.14], primarySoft);
+  voxelBox(visual, 'pocketFlapR', [0.11, 0.02, 0.025], [0.14, 0.685, -0.14], primarySoft);
+  voxelBox(visual, 'waistFoldL', [0.06, 0.16, 0.02], [-0.17, 0.62, -0.135], primaryShadow);
+  voxelBox(visual, 'waistFoldR', [0.06, 0.16, 0.02], [0.17, 0.62, -0.135], primaryLight);
+  voxelBox(visual, 'sideSeamL', [0.03, 0.28, 0.24], [-0.205, 0.71, 0.01], primaryShadow);
+  voxelBox(visual, 'sideSeamR', [0.03, 0.28, 0.24], [0.205, 0.71, 0.01], primaryLight);
+  voxelBox(visual, 'backCenterSeam', [0.03, 0.30, 0.02], [0, 0.72, 0.205], primaryShadow);
 
-  // Black backpack, own group so straps/flap move as a unit with the torso.
+  if (isRescue) {
+    // Reflective safety stripes and a utility belt over the jumpsuit.
+    voxelBox(visual, 'stripeChestLower', [0.34, 0.045, 0.02], [0, 0.685, -0.155], stripeColor);
+    voxelBox(visual, 'stripeChestUpper', [0.34, 0.045, 0.02], [0, 0.83, -0.155], stripeColor);
+    voxelBox(visual, 'stripeBack', [0.30, 0.045, 0.02], [0, 0.76, 0.20], stripeColor);
+    voxelBox(visual, 'belt', [0.44, 0.045, 0.29], [0, 0.615, 0.015], beltColor);
+    voxelBox(visual, 'beltBuckle', [0.06, 0.05, 0.02], [0, 0.615, -0.145], metalColor);
+  }
+
+  // Gear pack, own group so straps/flap move as a unit with the torso.
   const backpack = new THREE.Group();
-  backpack.position.set(0, 0.38, 0.20);
-  boxPart(backpack, 'packMain', [0.32, 0.34, 0.16], [0, 0, 0.02], bagDark);
-  boxPart(backpack, 'packFlap', [0.26, 0.06, 0.17], [0, 0.155, 0.015], 0x30393f);
-  boxPart(backpack, 'packPocket', [0.22, 0.12, 0.06], [0, -0.10, 0.06], bagDarker);
-  boxPart(backpack, 'strapL', [0.05, 0.34, 0.035], [-0.135, 0.02, -0.16], bagDark);
-  boxPart(backpack, 'strapR', [0.05, 0.34, 0.035], [0.135, 0.02, -0.16], bagDark);
+  backpack.position.set(0, 0.75, 0.20);
+  voxelBox(backpack, 'packMain', [0.32, 0.34, 0.16], [0, 0, 0.02], bagDark);
+  voxelBox(backpack, 'packFlap', [0.26, 0.06, 0.17], [0, 0.155, 0.015], bagMid);
+  voxelBox(backpack, 'packTopStep', [0.22, 0.035, 0.15], [0, 0.185, 0.005], bagMid);
+  voxelBox(backpack, 'packPocket', [0.22, 0.12, 0.06], [0, -0.10, 0.06], bagDarker);
+  voxelBox(backpack, 'packPocketFlap', [0.20, 0.03, 0.07], [0, -0.03, 0.075], bagMid);
+  voxelBox(backpack, 'packBuckle', [0.035, 0.04, 0.025], [0, -0.06, 0.135], metalColor);
+  voxelBox(backpack, 'packSideL', [0.05, 0.28, 0.15], [-0.17, -0.01, 0.02], bagDarker);
+  voxelBox(backpack, 'packSideR', [0.05, 0.28, 0.15], [0.17, -0.01, 0.02], bagDarker);
+  voxelBox(backpack, 'packBottom', [0.30, 0.04, 0.15], [0, -0.17, 0.02], bagDarker);
+  voxelBox(backpack, 'packCenterRidge', [0.035, 0.30, 0.03], [0, 0, 0.105], bagMid);
+  voxelBox(backpack, 'strapL', [0.05, 0.34, 0.035], [-0.135, 0.02, -0.16], bagDark);
+  voxelBox(backpack, 'strapR', [0.05, 0.34, 0.035], [0.135, 0.02, -0.16], bagDark);
+  voxelBox(backpack, 'strapHighlightL', [0.014, 0.28, 0.014], [-0.12, 0.03, -0.145], 0x455058);
+  voxelBox(backpack, 'strapHighlightR', [0.014, 0.28, 0.014], [0.12, 0.03, -0.145], 0x455058);
   visual.add(backpack);
 
-  // Head: simplified hood + face, kept at true size (not stretched with the body).
-  const head = boxPart(visual, 'head', [0.30, 0.27, 0.31], [0, headY, -0.005], skin);
-  boxPart(head, 'hoodTop', [0.30, 0.10, 0.32], [0, 0.11, 0.02], yellowLight);
-  boxPart(head, 'hoodBack', [0.30, 0.22, 0.10], [0, 0.02, 0.15], yellowDark);
-  boxPart(head, 'hoodSideL', [0.06, 0.22, 0.30], [-0.155, -0.01, 0], yellow);
-  boxPart(head, 'hoodSideR', [0.06, 0.22, 0.30], [0.155, -0.01, 0], yellow);
-  boxPart(head, 'hoodFrontRim', [0.26, 0.05, 0.05], [0, 0.11, -0.14], yellowDark);
-  boxPart(head, 'faceBase', [0.24, 0.22, 0.06], [0, -0.03, -0.15], skin);
-  boxPart(head, 'hairFringe', [0.20, 0.06, 0.05], [0, 0.05, -0.15], hair);
-  boxPart(head, 'browL', [0.06, 0.02, 0.03], [-0.06, 0.02, -0.17], hair);
-  boxPart(head, 'browR', [0.06, 0.02, 0.03], [0.06, 0.02, -0.17], hair);
-  boxPart(head, 'eyeL', [0.045, 0.045, 0.02], [-0.06, -0.02, -0.18], 0x253342);
-  boxPart(head, 'eyeR', [0.045, 0.045, 0.02], [0.06, -0.02, -0.18], 0x253342);
-  boxPart(head, 'eyeGlintL', [0.012, 0.012, 0.01], [-0.068, -0.012, -0.19], 0xffffff);
-  boxPart(head, 'eyeGlintR', [0.012, 0.012, 0.01], [0.052, -0.012, -0.19], 0xffffff);
-  boxPart(head, 'nose', [0.03, 0.04, 0.03], [0, -0.05, -0.19], 0xe2a272);
-  boxPart(head, 'mouth', [0.06, 0.02, 0.02], [0, -0.09, -0.18], 0x7d3530);
-  boxPart(head, 'chin', [0.10, 0.03, 0.04], [0, -0.12, -0.16], skinShadow);
+  // Head: hood (rain) or helmet (rescue), both with a forward brim, plus a
+  // shared layered face, kept at true size (not stretched with the body).
+  const head = voxelBox(visual, 'head', [0.30, 0.27, 0.31], [0, headY, -0.005], skin);
+  if (isRescue) {
+    voxelBox(head, 'helmetDome', [0.30, 0.09, 0.32], [0, 0.115, 0.02], helmetColor);
+    voxelBox(head, 'helmetDomeTop', [0.20, 0.03, 0.22], [0, 0.175, 0.02], helmetShadow);
+    voxelBox(head, 'helmetBack', [0.28, 0.16, 0.08], [0, 0.03, 0.16], helmetColor);
+    voxelBox(head, 'helmetSideL', [0.05, 0.14, 0.28], [-0.155, 0.02, 0], helmetColor);
+    voxelBox(head, 'helmetSideR', [0.05, 0.14, 0.28], [0.155, 0.02, 0], helmetColor);
+    voxelBox(head, 'helmetBrim', [0.28, 0.03, 0.10], [0, 0.065, -0.195], helmetShadow);
+    voxelBox(head, 'helmetBrimEdge', [0.30, 0.015, 0.03], [0, 0.05, -0.235], helmetDark);
+    voxelBox(head, 'helmetBadge', [0.05, 0.05, 0.02], [0, 0.10, -0.185], badgeColor);
+    voxelBox(head, 'helmetStrapL', [0.02, 0.10, 0.02], [-0.145, -0.06, -0.08], 0x2a2a2a);
+    voxelBox(head, 'helmetStrapR', [0.02, 0.10, 0.02], [0.145, -0.06, -0.08], 0x2a2a2a);
+  } else {
+    voxelBox(head, 'hoodTop', [0.30, 0.10, 0.32], [0, 0.11, 0.02], primaryLight);
+    voxelBox(head, 'hoodTopRidge', [0.06, 0.03, 0.30], [0, 0.165, 0.02], primarySoft);
+    voxelBox(head, 'hoodBack', [0.30, 0.22, 0.10], [0, 0.02, 0.15], primaryDark);
+    voxelBox(head, 'hoodBackBulge', [0.22, 0.12, 0.06], [0, -0.02, 0.21], primaryShadow);
+    voxelBox(head, 'hoodSideL', [0.06, 0.22, 0.30], [-0.155, -0.01, 0], primary);
+    voxelBox(head, 'hoodSideR', [0.06, 0.22, 0.30], [0.155, -0.01, 0], primary);
+    voxelBox(head, 'hoodTempleL', [0.045, 0.06, 0.045], [-0.135, -0.05, -0.145], primaryDark);
+    voxelBox(head, 'hoodTempleR', [0.045, 0.06, 0.045], [0.135, -0.05, -0.145], primaryDark);
+    voxelBox(head, 'hoodCheekL', [0.035, 0.09, 0.035], [-0.145, -0.03, -0.13], primaryShadow);
+    voxelBox(head, 'hoodCheekR', [0.035, 0.09, 0.035], [0.145, -0.03, -0.13], primary);
+    voxelBox(head, 'hoodFrontRim', [0.26, 0.05, 0.05], [0, 0.11, -0.14], primaryDark);
+    voxelBox(head, 'hoodBrim', [0.24, 0.035, 0.09], [0, 0.075, -0.185], primaryDark);
+  }
+  voxelBox(head, 'faceBase', [0.24, 0.22, 0.06], [0, -0.03, -0.15], skin);
+  voxelBox(head, 'hairFringe', [0.20, 0.06, 0.05], [0, 0.05, -0.15], hair);
+  voxelBox(head, 'fringeSideL', [0.045, 0.045, 0.04], [-0.085, 0.035, -0.165], hairLight);
+  voxelBox(head, 'fringeSideR', [0.045, 0.045, 0.04], [0.085, 0.045, -0.165], hair);
+  voxelBox(head, 'browL', [0.06, 0.02, 0.03], [-0.06, 0.02, -0.17], hair);
+  voxelBox(head, 'browR', [0.06, 0.02, 0.03], [0.06, 0.02, -0.17], hair);
+  voxelBox(head, 'browShadowL', [0.06, 0.012, 0.02], [-0.06, 0.005, -0.175], skinShadow);
+  voxelBox(head, 'browShadowR', [0.06, 0.012, 0.02], [0.06, 0.005, -0.175], skinShadow);
+  voxelBox(head, 'eyeL', [0.045, 0.045, 0.02], [-0.06, -0.02, -0.18], 0x253342);
+  voxelBox(head, 'eyeR', [0.045, 0.045, 0.02], [0.06, -0.02, -0.18], 0x253342);
+  voxelBox(head, 'eyeGlintL', [0.012, 0.012, 0.01], [-0.068, -0.012, -0.19], 0xffffff);
+  voxelBox(head, 'eyeGlintR', [0.012, 0.012, 0.01], [0.052, -0.012, -0.19], 0xffffff);
+  voxelBox(head, 'nose', [0.03, 0.04, 0.03], [0, -0.05, -0.19], 0xe2a272);
+  voxelBox(head, 'noseHighlight', [0.012, 0.014, 0.01], [-0.006, -0.045, -0.205], 0xf6c090);
+  voxelBox(head, 'mouth', [0.06, 0.02, 0.02], [0, -0.09, -0.18], 0x7d3530);
+  voxelBox(head, 'chin', [0.10, 0.03, 0.04], [0, -0.12, -0.16], skinShadow);
+  voxelBox(head, 'jawShadeL', [0.05, 0.03, 0.03], [-0.10, -0.13, -0.15], skinShadow);
+  voxelBox(head, 'jawShadeR', [0.05, 0.03, 0.03], [0.10, -0.13, -0.15], skinShadow);
 
   // Articulated arms and legs, each a Group pivoting from the shoulder/hip joint.
   function makeArm(side) {
     const arm = new THREE.Group();
     arm.position.set(side * 0.245, shoulderY, 0);
-    boxPart(arm, 'upperSleeve', [0.15, 0.20, 0.17], [0, -0.10, 0], yellowLight);
-    boxPart(arm, 'lowerSleeve', [0.13, 0.18, 0.15], [0, -0.29, 0], yellow);
-    boxPart(arm, 'cuff', [0.135, 0.05, 0.155], [0, -0.40, 0], yellowDark);
-    boxPart(arm, 'hand', [0.11, 0.10, 0.13], [0, -0.46, -0.01], skin);
+    voxelBox(arm, 'shoulderCap', [0.16, 0.06, 0.19], [0, 0.005, 0], primaryDark);
+    voxelBox(arm, 'shoulderHighlight', [0.08, 0.03, 0.15], [side * 0.015, 0.03, -0.01], primarySoft);
+    voxelBox(arm, 'upperSleeve', [0.15, 0.20, 0.17], [0, -0.10, 0], primaryLight);
+    if (isRescue) voxelBox(arm, 'stripeArm', [0.09, 0.03, 0.01], [0, -0.02, -0.09], stripeColor);
+    voxelBox(arm, 'elbowTile', [0.10, 0.035, 0.03], [0, -0.195, 0.075], primaryDark);
+    voxelBox(arm, 'lowerSleeve', [0.13, 0.18, 0.15], [0, -0.29, 0], primary);
+    voxelBox(arm, 'cuffShadow', [0.11, 0.015, 0.13], [0, -0.375, 0], primaryShadow);
+    voxelBox(arm, 'cuff', [0.135, 0.05, 0.155], [0, -0.40, 0], primaryDark);
+    voxelBox(arm, 'hand', [0.11, 0.10, 0.13], [0, -0.46, -0.01], handColor);
+    voxelBox(arm, 'fingerA', [0.02, 0.035, 0.02], [-0.025, -0.50, -0.03], handShadow);
+    voxelBox(arm, 'fingerB', [0.02, 0.038, 0.02], [0, -0.505, -0.032], handColor);
+    voxelBox(arm, 'fingerC', [0.02, 0.033, 0.02], [0.025, -0.50, -0.03], handShadow);
     visual.add(arm);
     return arm;
   }
@@ -1339,11 +1697,18 @@ function makePlayer() {
   function makeLeg(side) {
     const leg = new THREE.Group();
     leg.position.set(side * 0.10, hipY, 0);
-    leg.scale.y = 0.25;
-    boxPart(leg, 'thigh', [0.20, 0.26, 0.20], [0, -0.13, 0], navy);
-    boxPart(leg, 'shin', [0.16, 0.28, 0.17], [0, -0.40, 0.01], navyDark);
-    boxPart(leg, 'boot', [0.20, 0.16, 0.26], [0, -0.62, -0.02], bootColor);
-    boxPart(leg, 'bootSole', [0.20, 0.03, 0.26], [0, -0.705, -0.02], bagDarker);
+    leg.scale.y = 0.764;
+    voxelBox(leg, 'thigh', [0.20, 0.26, 0.20], [0, -0.13, 0], legPrimary);
+    voxelBox(leg, 'sideTrouserFold', [0.03, 0.14, 0.17], [side * 0.075, -0.15, 0], legPrimaryLight);
+    voxelBox(leg, 'knee', [0.11, 0.05, 0.02], [0, -0.155, -0.10], legPrimaryDarkest);
+    voxelBox(leg, 'shin', [0.16, 0.28, 0.17], [0, -0.40, 0.01], legPrimaryDark);
+    voxelBox(leg, 'legFrontFacet', [0.09, 0.09, 0.03], [0, -0.21, -0.11], legPrimaryLight);
+    voxelBox(leg, 'ankleBlock', [0.13, 0.035, 0.18], [0, -0.285, 0.02], legPrimaryDark);
+    voxelBox(leg, 'boot', [0.20, 0.16, 0.26], [0, -0.62, -0.02], bootColor);
+    voxelBox(leg, 'bootToe', [0.15, 0.045, 0.05], [0, -0.315, -0.135], bootAccent);
+    voxelBox(leg, 'bootBand', [0.165, 0.02, 0.23], [0, -0.335, -0.025], metalColor);
+    voxelBox(leg, 'bootSideDark', [0.04, 0.06, 0.19], [side * 0.075, -0.32, -0.02], 0x11181d);
+    voxelBox(leg, 'bootSole', [0.20, 0.03, 0.26], [0, -0.705, -0.02], bagDarker);
     visual.add(leg);
     return leg;
   }
@@ -1358,9 +1723,37 @@ function makePlayer() {
   return root;
 }
 
-const player = makePlayer();
+let currentCharacterType = 'rain';
+let player = makePlayer(currentCharacterType);
 player.position.set(startX, 0, startZ);
 scene.add(player);
+let characterChosen = false;
+
+function disposeObject(object) {
+  object.traverse((obj) => {
+    if (obj.geometry) obj.geometry.dispose();
+  });
+}
+
+function selectCharacter(type) {
+  if (type !== currentCharacterType) {
+    const prevPosition = player.position.clone();
+    const prevRotationY = player.rotation.y;
+    scene.remove(player);
+    disposeObject(player);
+    player = makePlayer(type);
+    player.position.copy(prevPosition);
+    player.rotation.y = prevRotationY;
+    scene.add(player);
+    currentCharacterType = type;
+  }
+  characterChosen = true;
+  characterSelect.classList.add('is-hidden');
+}
+
+characterCards.forEach((card) => {
+  card.addEventListener('click', () => selectCharacter(card.dataset.character));
+});
 
 const keys = new Set();
 let cameraYaw = 0;
@@ -1380,6 +1773,7 @@ const cameraLookTarget = new THREE.Vector3();
 const desiredCamera = new THREE.Vector3();
 
 addEventListener('keydown', (event) => {
+  if (!characterChosen) return;
   keys.add(event.code);
   if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) {
     event.preventDefault();
@@ -1395,16 +1789,210 @@ addEventListener('keydown', (event) => {
 });
 addEventListener('keyup', (event) => keys.delete(event.code));
 
+// If the window/tab loses focus while a movement key is held down (alt-tab,
+// clicking a browser dialog, switching tabs, dragging outside the canvas...)
+// the corresponding keyup never fires, so the key would stay stuck "held"
+// forever and the character keeps walking on its own. Clear all held keys
+// whenever we can no longer be sure we'll see the matching keyup.
+function releaseAllKeys() {
+  keys.clear();
+}
+addEventListener('blur', releaseAllKeys);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) releaseAllKeys();
+});
+
+// --- Tile paint edit mode -------------------------------------------------
+// Toggled from the "編集モード" button. While active: left click / drag paints
+// road or grass onto the field; right-button drag rotates the camera.
+let editMode = false;
+let painting = false;
+let paintDirty = false;
+const paintRaycaster = new THREE.Raycaster();
+const paintPointer = new THREE.Vector2();
+
+function savePaintOverrides() {
+  try {
+    localStorage.setItem(PAINT_STORAGE_KEY, JSON.stringify([...tilePaintOverrides]));
+    localStorage.setItem(HEIGHT_STORAGE_KEY, JSON.stringify([...heightPaintOverrides]));
+  } catch (error) {
+    console.warn('Could not save paint overrides:', error);
+  }
+}
+
+let heightDirty = false;
+
+// Undo/redo history. Each entry in the stack is a "batch" (everything one
+// click/drag stroke or one クリア changed): a list of
+// { map: 'tile' | 'height', key, before, after }, where before/after of
+// `undefined` means the key was absent (i.e. undo/redo deletes it).
+const undoStack = [];
+const redoStack = [];
+const overrideMaps = { tile: tilePaintOverrides, height: heightPaintOverrides };
+
+function recordChange(batch, mapName, key, before, after) {
+  if (before === after) return;
+  batch.push({ map: mapName, key, before, after });
+}
+
+function pushHistory(batch) {
+  if (!batch.length) return;
+  undoStack.push(batch);
+  redoStack.length = 0;
+}
+
+function applyBatch(batch, useAfter) {
+  for (const change of batch) {
+    const map = overrideMaps[change.map];
+    const value = useAfter ? change.after : change.before;
+    if (value === undefined) map.delete(change.key);
+    else map.set(change.key, value);
+  }
+  heightDirty = true;
+  paintDirty = true;
+}
+
+function undo() {
+  const batch = undoStack.pop();
+  if (!batch) return;
+  applyBatch(batch, false);
+  redoStack.push(batch);
+}
+
+function redo() {
+  const batch = redoStack.pop();
+  if (!batch) return;
+  applyBatch(batch, true);
+  undoStack.push(batch);
+}
+
+// Two independent axes: what the click targets (the ground tile's material,
+// or the block/height column beneath it) and, within "block", whether to
+// build or remove. The material group is shared by both targets so future
+// materials only need to be added in one place.
+function stampMaterial(x, z, material, batch) {
+  const base = baseTileType(x, z);
+  if (base === 'river') return false;
+  const key = x + ',' + z;
+  const before = tilePaintOverrides.get(key);
+  const after = material === base ? undefined : material;
+  if (after === undefined) tilePaintOverrides.delete(key);
+  else tilePaintOverrides.set(key, after);
+  recordChange(batch, 'tile', key, before, after);
+  return before !== after;
+}
+
+function paintAt(clientX, clientY) {
+  paintPointer.set((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1);
+  paintRaycaster.setFromCamera(paintPointer, camera);
+  const hits = paintRaycaster.intersectObject(field, true);
+  if (!hits.length) return;
+  const point = hits[0].point;
+  const centerX = Math.floor(blockXFromWorld(point.x));
+  const centerZ = Math.floor(blockZFromWorld(point.z));
+  const target = document.querySelector('input[name="editTarget"]:checked').value;
+  const action = document.querySelector('input[name="paintAction"]:checked').value;
+  const material = document.querySelector('input[name="paintMaterial"]:checked').value;
+  const half = Math.floor(parseInt(brushSizeSelect.value, 10) / 2);
+  const batch = [];
+  let changed = false;
+
+  if (target === 'block') {
+    const step = action === 'build' ? 1 : -1;
+    for (let dz = -half; dz <= half; dz++) {
+      for (let dx = -half; dx <= half; dx++) {
+        const x = centerX + dx;
+        const z = centerZ + dz;
+        if (x < 0 || x >= tilesWide || z < 0 || z >= tilesDeep) continue;
+        if (isRiverBlock(x, z) || isRampActive(x, z)) continue;
+        const key = x + ',' + z;
+        const before = heightPaintOverrides.get(key) || 0;
+        const base = getBaseTerrainHeightBlocks(x, z);
+        const afterValue = THREE.MathUtils.clamp(before + step, -base, 40 - base);
+        const after = afterValue === 0 ? undefined : afterValue;
+        if (after === undefined) heightPaintOverrides.delete(key);
+        else heightPaintOverrides.set(key, after);
+        const beforeRecorded = before === 0 ? undefined : before;
+        recordChange(batch, 'height', key, beforeRecorded, after);
+        if (beforeRecorded !== after) changed = true;
+        if (action === 'build' && stampMaterial(x, z, material, batch)) changed = true;
+      }
+    }
+    if (changed) { heightDirty = true; paintDirty = true; }
+    pushHistory(batch);
+    return;
+  }
+
+  for (let dz = -half; dz <= half; dz++) {
+    for (let dx = -half; dx <= half; dx++) {
+      const x = centerX + dx;
+      const z = centerZ + dz;
+      if (x < 0 || x >= tilesWide || z < 0 || z >= tilesDeep) continue;
+      if (stampMaterial(x, z, material, batch)) changed = true;
+    }
+  }
+  if (changed) paintDirty = true;
+  pushHistory(batch);
+}
+
+function applyPaintIfDirty() {
+  if (!paintDirty && !heightDirty) return;
+  paintDirty = false;
+  heightDirty = false;
+  buildTerrainFillBlocks();
+  buildPaintableTiles();
+  buildBlockRamp();
+  updateTufts();
+  savePaintOverrides();
+}
+
+canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+
+// Holding the mouse button down keeps applying the current tool (paint tile,
+// build, or remove) at a fixed rate - not just once per click, and not only
+// while the pointer is actively moving.
+const PAINT_REPEAT_MS = 150;
+let paintIntervalId = null;
+let lastPaintX = 0;
+let lastPaintY = 0;
+
+function startPaintLoop(clientX, clientY) {
+  lastPaintX = clientX;
+  lastPaintY = clientY;
+  paintAt(clientX, clientY);
+  if (paintIntervalId) clearInterval(paintIntervalId);
+  paintIntervalId = setInterval(() => paintAt(lastPaintX, lastPaintY), PAINT_REPEAT_MS);
+}
+function stopPaintLoop() {
+  if (paintIntervalId) {
+    clearInterval(paintIntervalId);
+    paintIntervalId = null;
+  }
+}
+
 canvas.addEventListener('pointerdown', (event) => {
+  guide.classList.add('is-hidden');
+  if (editMode && event.button === 0) {
+    painting = true;
+    canvas.setPointerCapture(event.pointerId);
+    startPaintLoop(event.clientX, event.clientY);
+    return;
+  }
   dragging = true;
   canvas.setPointerCapture(event.pointerId);
-  guide.classList.add('is-hidden');
 });
 canvas.addEventListener('pointerup', (event) => {
   dragging = false;
+  painting = false;
+  stopPaintLoop();
   canvas.releasePointerCapture(event.pointerId);
 });
 canvas.addEventListener('pointermove', (event) => {
+  if (painting) {
+    lastPaintX = event.clientX;
+    lastPaintY = event.clientY;
+    return;
+  }
   if (!dragging) return;
   cameraYaw -= event.movementX * 0.006;
   cameraPitch = THREE.MathUtils.clamp(cameraPitch + event.movementY * 0.004, cameraPitchMin, cameraPitchMax);
@@ -1412,6 +2000,67 @@ canvas.addEventListener('pointermove', (event) => {
 canvas.addEventListener('wheel', (event) => {
   cameraDistance = THREE.MathUtils.clamp(cameraDistance + event.deltaY * 0.003, 2.7, 8);
 }, { passive: true });
+
+editToggle.addEventListener('click', () => {
+  editMode = !editMode;
+  editTools.classList.toggle('is-hidden', !editMode);
+  editToggle.classList.toggle('is-active', editMode);
+});
+
+function updateEditToolsVisibility() {
+  const target = document.querySelector('input[name="editTarget"]:checked').value;
+  const action = document.querySelector('input[name="paintAction"]:checked').value;
+  blockActionRow.classList.toggle('is-hidden', target !== 'block');
+  materialRow.classList.toggle('is-hidden', target === 'block' && action === 'remove');
+}
+
+document.querySelectorAll('input[name="editTarget"], input[name="paintAction"]').forEach((input) => {
+  input.addEventListener('change', updateEditToolsVisibility);
+});
+updateEditToolsVisibility();
+
+exportPaintButton.addEventListener('click', () => {
+  const blob = new Blob(
+    [JSON.stringify({
+      version: 2,
+      overrides: [...tilePaintOverrides],
+      heightOverrides: [...heightPaintOverrides]
+    }, null, 2)],
+    { type: 'application/json' }
+  );
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'tile-paint-overrides.json';
+  link.click();
+  URL.revokeObjectURL(url);
+});
+
+clearPaintButton.addEventListener('click', () => {
+  if (tilePaintOverrides.size === 0 && heightPaintOverrides.size === 0) return;
+  if (!confirm('編集した内容をすべて削除します。よろしいですか？')) return;
+  const batch = [];
+  for (const [key, before] of tilePaintOverrides) recordChange(batch, 'tile', key, before, undefined);
+  for (const [key, before] of heightPaintOverrides) recordChange(batch, 'height', key, before, undefined);
+  tilePaintOverrides.clear();
+  heightPaintOverrides.clear();
+  paintDirty = true;
+  heightDirty = true;
+  pushHistory(batch);
+});
+
+addEventListener('keydown', (event) => {
+  if (!editMode) return;
+  if (!event.ctrlKey && !event.metaKey) return;
+  if (event.code === 'KeyZ') {
+    event.preventDefault();
+    undo();
+  } else if (event.code === 'KeyY') {
+    event.preventDefault();
+    redo();
+  }
+});
+// --------------------------------------------------------------------------
 
 function isInsideHouse(x, z) {
   return houseColliders.some((collider) => (
@@ -1511,10 +2160,12 @@ function initMinimap() {
     [stairEndX + stair.across.x * stairHalf, stairEndZ + stair.across.z * stairHalf],
     [stairEndX - stair.across.x * stairHalf, stairEndZ - stair.across.z * stairHalf]
   ].map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
+  const plateauPath = getPlateauPathBounds();
   minimapRoads.innerHTML = `
     <rect x="${road.left.toFixed(2)}" y="${road.top.toFixed(2)}" width="${(road.right - road.left).toFixed(2)}" height="${(road.bottom - road.top).toFixed(2)}" fill="#b8afa4" opacity=".9"/>
-    <polygon points="${connectorPoints}" fill="#9d9992" opacity=".94"/>
-    <polygon points="${stairPoints}" fill="#8d8b87" opacity=".92"/>
+    <polygon points="${connectorPoints}" fill="#b8afa4" opacity=".94"/>
+    <polygon points="${stairPoints}" fill="#b8afa4" opacity=".92"/>
+    <rect x="${plateauPath.minBlockX}" y="0" width="${plateauPath.maxBlockX - plateauPath.minBlockX}" height="${plateauPath.endBlockZ}" fill="#b8afa4" opacity=".94"/>
   `;
   const leftEdgePoints = [];
   const rightEdgePoints = [];
@@ -1549,6 +2200,7 @@ function initMinimap() {
 }
 
 function updatePlayer(dt) {
+  if (!characterChosen) return;
   let side = 0;
   let forward = 0;
   if (keys.has('KeyW') || keys.has('ArrowUp')) forward += 1;
@@ -1604,7 +2256,7 @@ function updatePlayer(dt) {
 }
 
 function updateCamera(dt) {
-  cameraTarget.set(player.position.x, player.position.y + 0.64, player.position.z);
+  cameraTarget.set(player.position.x, player.position.y + 0.92, player.position.z);
   const lookUpAmount = Math.max(0, -cameraPitch);
   cameraLookTarget.set(
     cameraTarget.x,
@@ -1614,10 +2266,10 @@ function updateCamera(dt) {
   const horizontal = Math.cos(cameraPitch) * cameraDistance;
   desiredCamera.set(
     cameraTarget.x + Math.sin(cameraYaw) * horizontal,
-    cameraTarget.y + Math.sin(cameraPitch) * cameraDistance + 0.33,
+    cameraTarget.y + Math.sin(cameraPitch) * cameraDistance + 0.47,
     cameraTarget.z + Math.cos(cameraYaw) * horizontal
   );
-  desiredCamera.y = Math.max(desiredCamera.y, player.position.y + 0.17);
+  desiredCamera.y = Math.max(desiredCamera.y, player.position.y + 0.25);
   camera.position.lerp(desiredCamera, 1 - Math.exp(-10 * dt));
   camera.lookAt(cameraLookTarget);
 }
@@ -1671,15 +2323,27 @@ function updateRiver(now) {
   riverMeshes.flowHighlights.instanceMatrix.needsUpdate = true;
 }
 
+let fpsFrames = 0;
+let fpsElapsed = 0;
+
 function animate(now) {
   requestAnimationFrame(animate);
   const dt = Math.min(0.04, (now - lastTime) / 1000);
   lastTime = now;
+  applyPaintIfDirty();
   updatePlayer(dt);
   updateCamera(dt);
   updateMinimap();
   updateRiver(now);
   renderer.render(scene, camera);
+
+  fpsFrames += 1;
+  fpsElapsed += dt;
+  if (fpsElapsed >= 0.5) {
+    fpsCounter.textContent = `${Math.round(fpsFrames / fpsElapsed)} FPS`;
+    fpsFrames = 0;
+    fpsElapsed = 0;
+  }
 }
 
 initMinimap();
