@@ -7,10 +7,15 @@ const characterSelect = document.querySelector('#characterSelect');
 const editToggle = document.querySelector('#editToggle');
 const editTools = document.querySelector('#editTools');
 const brushSizeSelect = document.querySelector('#brushSize');
+const brushSizeRow = document.querySelector('#brushSizeRow');
 const exportPaintButton = document.querySelector('#exportPaint');
 const clearPaintButton = document.querySelector('#clearPaint');
 const materialRow = document.querySelector('#materialRow');
 const blockActionRow = document.querySelector('#blockActionRow');
+const rangeRow = document.querySelector('#rangeRow');
+const rangeStatus = document.querySelector('#rangeStatus');
+const rangeResetButton = document.querySelector('#rangeReset');
+const rangeFloatToggle = document.querySelector('#rangeFloatToggle');
 const characterCards = document.querySelectorAll('.character-card');
 const minimapMap = document.querySelector('#minimapMap');
 const minimapContent = document.querySelector('#minimapContent');
@@ -28,19 +33,22 @@ const mapConfig = Object.freeze({
   // 1 Three.js unit = 1 metre. Keep this value fixed so assets remain the same scale.
   blockSize: 0.3125,
   // Block coordinates use the minimap convention: northwest is (0, 0), east is +X, south is +Z.
+  // Width was 105; expanded by 7 cells (105 blocks) to the west, so every
+  // existing X-anchored position below is shifted +105 to stay in the same
+  // physical spot relative to the (unmoved) east edge.
   blocks: {
-    width: 105,
+    width: 105 + 7 * 15,
     depth: 195
   },
   cellBlocks: 15,
   playerStartBlock: {
-    x: 75,
+    x: 75 + 7 * 15,
     z: 187.5
   },
   structures: {
     startHouse: {
       centerBlock: {
-        x: 52.5,
+        x: 52.5 + 7 * 15,
         z: 182.5
       },
       halfBlocks: 7
@@ -48,7 +56,7 @@ const mapConfig = Object.freeze({
     additionalHouses: [
       {
         name: 'SmallBlueHouse',
-        centerBlock: { x: 52.5, z: 162.5 },
+        centerBlock: { x: 52.5 + 7 * 15, z: 162.5 },
         halfBlocks: 6,
         wallHeightBlocks: 10,
         roofHeightBlocks: 4,
@@ -56,7 +64,7 @@ const mapConfig = Object.freeze({
       },
       {
         name: 'BlockApartment',
-        centerBlock: { x: 52.5, z: 142.5 },
+        centerBlock: { x: 52.5 + 7 * 15, z: 142.5 },
         halfBlocks: 7,
         wallHeightBlocks: 24,
         roofHeightBlocks: 2,
@@ -100,6 +108,9 @@ const mapConfig = Object.freeze({
     }
   }
 });
+
+// How far the map was widened to the west, in blocks (7 cells x 15).
+const WEST_EXPANSION_BLOCKS = 7 * mapConfig.cellBlocks;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x83cffa);
@@ -470,7 +481,7 @@ function rampLevelFromAlong(along, stair) {
 // Flatten the upper-left area at and beyond the cell that is 8 cells up from
 // the bottom and 3 cells in from the left, to a uniform height of 13 blocks.
 const flattenPlateauHeight = 13;
-const flattenPlateauMaxBlockX = 3 * mapConfig.cellBlocks;
+const flattenPlateauMaxBlockX = 3 * mapConfig.cellBlocks + WEST_EXPANSION_BLOCKS;
 const flattenPlateauMaxBlockZ = (tilesDeep / mapConfig.cellBlocks - 8 + 1) * mapConfig.cellBlocks;
 
 // Hand-edited height deltas from the in-game "積む/削除" edit tools. Keyed by
@@ -501,9 +512,15 @@ function getTerrainHeightBlocks(blockX, blockZ) {
 function getBaseTerrainHeightBlocks(blockX, blockZ) {
   if (blockX < 0 || blockX >= tilesWide || blockZ < 0 || blockZ >= tilesDeep) return 0;
   if (isRiverBlock(blockX, blockZ)) return 0;
-  if (blockX < flattenPlateauMaxBlockX && blockZ < flattenPlateauMaxBlockZ) return flattenPlateauHeight;
+  // The 7-cell western expansion just extrudes whatever height the old west
+  // edge (now at WEST_EXPANSION_BLOCKS) had for this row, so existing terrain
+  // shapes (plateau, ramp...) are preserved rather than recomputed against an
+  // edge that moved. Everything east of that boundary is untouched (X clamps
+  // to itself there).
+  const effectiveBlockX = Math.max(blockX, WEST_EXPANSION_BLOCKS);
+  if (effectiveBlockX < flattenPlateauMaxBlockX && blockZ < flattenPlateauMaxBlockZ) return flattenPlateauHeight;
 
-  const { along, across, stair } = stairLocalPosition(blockX + 0.5, blockZ + 0.5);
+  const { along, across, stair } = stairLocalPosition(effectiveBlockX + 0.5, blockZ + 0.5);
   if (along < 0) return 0;
 
   const isBeyondRampEnd = along >= stair.length;
@@ -517,7 +534,7 @@ function getBaseTerrainHeightBlocks(blockX, blockZ) {
   const shoulderDrop = Math.floor(Math.max(0, sideDistanceFromRamp - sameHeightShoulderWidth) / 4);
 
   const riverLeft = riverEdgesAtBlockZ(blockZ).left;
-  const distanceToRiver = riverLeft - (blockX + 0.5);
+  const distanceToRiver = riverLeft - (effectiveBlockX + 0.5);
   if (distanceToRiver <= 0) return 0;
 
   const riverSlopeWidth = 22;
@@ -534,7 +551,7 @@ function getBaseTerrainHeightBlocks(blockX, blockZ) {
   // again as the field gets farther from nearby houses.
   const limitBlockX = isBeyondRampEnd
     ? Math.floor(stair.startX + stair.forward.x * levelAlong + stair.across.x * across)
-    : blockX;
+    : effectiveBlockX;
   const limitBlockZ = isBeyondRampEnd
     ? Math.floor(stair.startZ + stair.forward.z * levelAlong + stair.across.z * across)
     : blockZ;
@@ -565,7 +582,15 @@ const tileColor = new THREE.Color();
 // "x,z", value is 'road' or 'grass'. Baked in below as the shipped defaults
 // (from an exported tile-paint-overrides.json), then localStorage edits from
 // this browser are layered on top so further in-game tweaks still persist.
-const DEFAULT_TILE_OVERRIDES = [
+// Coordinates below are relative to the ORIGINAL (pre-expansion) west edge;
+// shiftOverrideKey() moves them +WEST_EXPANSION_BLOCKS so they land on the
+// same physical tiles after the map was widened to the west.
+function shiftOverrideKey(key) {
+  const [x, z] = key.split(',').map(Number);
+  return (x + WEST_EXPANSION_BLOCKS) + ',' + z;
+}
+
+const DEFAULT_TILE_OVERRIDES_LOCAL = [
   ["75,126", "road"], ["76,126", "road"], ["76,125", "road"], ["77,126", "road"],
   ["78,126", "road"], ["77,125", "road"], ["25,91", "road"], ["25,90", "road"],
   ["27,90", "road"], ["27,85", "road"], ["27,86", "road"], ["27,88", "road"],
@@ -580,11 +605,13 @@ const DEFAULT_TILE_OVERRIDES = [
   ["32,95", "road"], ["31,94", "road"], ["30,93", "road"], ["29,92", "road"],
   ["28,91", "road"], ["28,92", "road"], ["29,93", "road"], ["30,94", "road"]
 ];
+const DEFAULT_TILE_OVERRIDES = DEFAULT_TILE_OVERRIDES_LOCAL.map(([key, value]) => [shiftOverrideKey(key), value]);
 
-const DEFAULT_HEIGHT_OVERRIDES = [
+const DEFAULT_HEIGHT_OVERRIDES_LOCAL = [
   ["64,133", -1], ["65,133", -1], ["64,134", -1], ["64,132", -1],
   ["63,131", -1], ["13,109", -1], ["12,110", -1], ["12,109", -1]
 ];
+const DEFAULT_HEIGHT_OVERRIDES = DEFAULT_HEIGHT_OVERRIDES_LOCAL.map(([key, value]) => [shiftOverrideKey(key), value]);
 
 const PAINT_STORAGE_KEY = 'suiboTilePaintOverrides';
 const tilePaintOverrides = new Map(DEFAULT_TILE_OVERRIDES);
@@ -602,6 +629,24 @@ try {
   for (const [key, value] of savedHeights) heightPaintOverrides.set(key, value);
 } catch (error) {
   console.warn('Could not load height overrides:', error);
+}
+
+// Range-select "floating" placements: rectangular slabs of blocks that sit in
+// mid-air, detached from the ground. These can't live in heightPaintOverrides
+// (that map is one solid column per x/z, always rooted at the ground), so
+// each floating slab is stored as its own record: { minX, maxX, minZ, maxZ,
+// bottom, top, material }, keyed by an incrementing id.
+const FLOATING_STORAGE_KEY = 'suiboFloatingRangeBlocks';
+const floatingBlocks = new Map();
+let floatingBlockSeq = 0;
+try {
+  const savedFloating = JSON.parse(localStorage.getItem(FLOATING_STORAGE_KEY) || '[]');
+  for (const [key, value] of savedFloating) {
+    floatingBlocks.set(key, value);
+    floatingBlockSeq = Math.max(floatingBlockSeq, parseInt(key, 10) + 1 || 0);
+  }
+} catch (error) {
+  console.warn('Could not load floating range blocks:', error);
 }
 
 function baseTileType(x, z) {
@@ -1339,6 +1384,290 @@ function createConfiguredBuilding(config) {
 
 mapConfig.structures.additionalHouses.forEach(createConfiguredBuilding);
 
+// --- Evacuation shelter ------------------------------------------------
+// Deliberately standalone: not in mapConfig.structures.additionalHouses, so
+// it doesn't touch the minimap or houseConfigs()/terrain-height-limiting.
+// Its ground origin is read from the real terrain height at this spot
+// (getTerrainHeightBlocks), not assumed to be 0 - this location sits on the
+// flattened northwest plateau, 13 blocks up, unlike the other houses which
+// all sit at sea level. A hardcoded sea-level origin is what buried the
+// building inside the raised ground last time.
+function createSignTexture(draw, width, height) {
+  const signCanvas = document.createElement('canvas');
+  signCanvas.width = width;
+  signCanvas.height = height;
+  draw(signCanvas.getContext('2d'), width, height);
+  const texture = new THREE.CanvasTexture(signCanvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function createEvacuationSign(config, origin) {
+  const half = config.halfBlocks;
+  const wallHeight = config.wallHeightBlocks;
+  const signWidthBlocks = half * 1.7;
+  const signHeightBlocks = 2.3;
+  const signGreen = 0x1f7a45;
+
+  const texture = createSignTexture((ctx, w, h) => {
+    ctx.fillStyle = '#1f7a45';
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = w * 0.012;
+    ctx.strokeRect(ctx.lineWidth, ctx.lineWidth, w - ctx.lineWidth * 2, h - ctx.lineWidth * 2);
+
+    // Pictogram: a running figure heading toward an exit, in the style of
+    // the standard green evacuation-route signs.
+    ctx.save();
+    ctx.translate(w * 0.17, h * 0.52);
+    ctx.strokeStyle = '#ffffff';
+    ctx.fillStyle = '#ffffff';
+    ctx.lineWidth = h * 0.05;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const s = h * 0.34;
+    ctx.beginPath();
+    ctx.arc(-s * 0.15, -s * 1.15, s * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.15, -s * 0.85);
+    ctx.lineTo(s * 0.05, -s * 0.15);
+    ctx.lineTo(s * 0.5, -s * 0.35);
+    ctx.moveTo(s * 0.05, -s * 0.15);
+    ctx.lineTo(-s * 0.35, s * 0.55);
+    ctx.moveTo(-s * 0.15, -s * 0.85);
+    ctx.lineTo(-s * 0.55, -s * 0.45);
+    ctx.moveTo(-s * 0.15, -s * 0.85);
+    ctx.lineTo(-s * 0.1, s * 0.05);
+    ctx.lineTo(s * 0.35, s * 0.65);
+    ctx.moveTo(-s * 0.1, s * 0.05);
+    ctx.lineTo(-s * 0.55, s * 0.65);
+    ctx.stroke();
+    ctx.strokeRect(s * 0.8, -s * 1.05, s * 0.5, s * 1.9);
+    ctx.beginPath();
+    ctx.moveTo(s * 0.8, -s * 0.1);
+    ctx.lineTo(s * 1.6, -s * 0.1);
+    ctx.lineTo(s * 1.35, -s * 0.35);
+    ctx.moveTo(s * 1.6, -s * 0.1);
+    ctx.lineTo(s * 1.35, s * 0.15);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.font = `700 ${h * 0.48}px "Yu Gothic UI", "Meiryo", sans-serif`;
+    ctx.fillText('避難所', w * 0.47, h * 0.53);
+  }, 1024, 320);
+
+  const frontMaterial = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.5 });
+  const sideMaterial = new THREE.MeshStandardMaterial({ color: signGreen, roughness: 0.6 });
+  const sign = new THREE.Mesh(
+    new THREE.BoxGeometry(signWidthBlocks * tileSize, signHeightBlocks * tileSize, tileSize * 0.35),
+    [sideMaterial, sideMaterial, sideMaterial, sideMaterial, frontMaterial, sideMaterial]
+  );
+  sign.position.set(
+    origin.x,
+    origin.y + (wallHeight + 0.55) * tileSize,
+    origin.z + (half + 0.35) * tileSize
+  );
+  sign.castShadow = true;
+  sign.receiveShadow = true;
+  scene.add(sign);
+
+  // Two timber posts holding the sign above the entrance.
+  const postMaterial = new THREE.MeshStandardMaterial({ color: 0x6b4a30, roughness: 0.85 });
+  const postHeight = (wallHeight + 0.55) * tileSize;
+  const postGeometry = new THREE.BoxGeometry(tileSize * 0.5, postHeight, tileSize * 0.5);
+  for (const side of [-1, 1]) {
+    const post = new THREE.Mesh(postGeometry, postMaterial);
+    post.position.set(
+      origin.x + side * (signWidthBlocks / 2 - 0.3) * tileSize,
+      origin.y + postHeight / 2,
+      origin.z + (half + 0.35) * tileSize
+    );
+    post.castShadow = true;
+    post.receiveShadow = true;
+    scene.add(post);
+  }
+}
+
+// A simple wooden perimeter fence with a gap left open in front of the door.
+// worldX/worldZ/groundY are the actual ground surface under the shelter -
+// NOT the block-center building origin (which sits tileSize/2 higher).
+function createShelterFence(config, worldX, worldZ, groundY) {
+  const half = config.halfBlocks;
+  const margin = half + 1.4;
+  const spacing = 2;
+  const gateHalf = 3; // wide enough for the front door
+
+  const segments = [];
+  for (let x = -margin; x < margin - 1e-6; x += spacing) {
+    const nx = Math.min(x + spacing, margin);
+    if (nx <= -gateHalf || x >= gateHalf) segments.push([x, margin, nx, margin]);
+  }
+  for (let x = -margin; x < margin - 1e-6; x += spacing) {
+    segments.push([x, -margin, Math.min(x + spacing, margin), -margin]);
+  }
+  for (let z = -margin; z < margin - 1e-6; z += spacing) {
+    const nz = Math.min(z + spacing, margin);
+    segments.push([-margin, z, -margin, nz]);
+    segments.push([margin, z, margin, nz]);
+  }
+
+  const postMaterial = new THREE.MeshStandardMaterial({ color: 0x2f241c, roughness: 0.86 });
+  const railMaterial = new THREE.MeshStandardMaterial({ color: 0x3d2b20, roughness: 0.86 });
+  const postGeometry = new THREE.BoxGeometry(tileSize * 0.46, tileSize * 2, tileSize * 0.46);
+  const railGeometry = new THREE.BoxGeometry(tileSize * 0.3, tileSize * 0.38, 1);
+  const matrix = new THREE.Matrix4();
+
+  const postKeys = new Map();
+  for (const [ax, az, bx, bz] of segments) {
+    for (const [px, pz] of [[ax, az], [bx, bz]]) {
+      postKeys.set(`${px.toFixed(3)},${pz.toFixed(3)}`, [px, pz]);
+    }
+  }
+  const postPositions = [...postKeys.values()];
+  const posts = new THREE.InstancedMesh(postGeometry, postMaterial, postPositions.length);
+  posts.name = 'ShelterFencePosts';
+  postPositions.forEach(([x, z], index) => {
+    matrix.makeTranslation(worldX + x * tileSize, groundY + tileSize, worldZ + z * tileSize);
+    posts.setMatrixAt(index, matrix);
+  });
+  posts.instanceMatrix.needsUpdate = true;
+  posts.castShadow = true;
+  posts.receiveShadow = true;
+  scene.add(posts);
+
+  const rails = new THREE.InstancedMesh(railGeometry, railMaterial, segments.length * 2);
+  rails.name = 'ShelterFenceRails';
+  let railIndex = 0;
+  for (const [ax, az, bx, bz] of segments) {
+    const dx = (bx - ax) * tileSize;
+    const dz = (bz - az) * tileSize;
+    const length = Math.hypot(dx, dz);
+    const angle = Math.atan2(dx, dz);
+    const cx = worldX + ((ax + bx) / 2) * tileSize;
+    const cz = worldZ + ((az + bz) / 2) * tileSize;
+    for (const y of [groundY + tileSize * 0.7, groundY + tileSize * 1.3]) {
+      matrix.makeRotationY(angle);
+      matrix.scale(new THREE.Vector3(1, 1, length));
+      matrix.setPosition(cx, y, cz);
+      rails.setMatrixAt(railIndex, matrix);
+      railIndex++;
+    }
+  }
+  rails.instanceMatrix.needsUpdate = true;
+  rails.castShadow = true;
+  rails.receiveShadow = true;
+  scene.add(rails);
+}
+
+function buildEvacuationShelter() {
+  const config = {
+    name: 'EvacuationShelter',
+    // Grid-cell convention (cellBlocks = 15, same as targetCellFromNorth):
+    // cell N's center is at (N - 0.5) * cellBlocks. "左から2マス目、上から5マス目"
+    // relative to the map as it was before the 7-cell west expansion, so
+    // +WEST_EXPANSION_BLOCKS keeps it physically in the same spot.
+    centerBlock: { x: 1.5 * mapConfig.cellBlocks + WEST_EXPANSION_BLOCKS, z: 4.5 * mapConfig.cellBlocks },
+    // Width x3 (11 -> 33 blocks across, half 5 -> 16), height x1.5 (7 -> 11).
+    halfBlocks: 16,
+    wallHeightBlocks: 11,
+    roofHeightBlocks: 2,
+    colors: { foundation: 0x8b8880, wall: 0xdcc79a, trim: 0x6b4a30, glass: 0x6f97a8, door: 0x5b3a2d, roof: 0x2f7d4f }
+  };
+
+  const centerBlockX = Math.round(config.centerBlock.x);
+  const centerBlockZ = Math.round(config.centerBlock.z);
+  const groundHeightBlocks = getTerrainHeightBlocks(centerBlockX, centerBlockZ);
+  const groundY = groundHeightBlocks * tileSize + 0.05;
+  const origin = new THREE.Vector3(
+    worldXFromBlock(config.centerBlock.x),
+    groundY + tileSize / 2,
+    worldZFromBlock(config.centerBlock.z)
+  );
+
+  const half = config.halfBlocks;
+  const wallHeight = config.wallHeightBlocks;
+  const roofHeight = config.roofHeightBlocks;
+  const foundation = [];
+  const walls = [];
+  const trim = [];
+  const glass = [];
+  const door = [];
+  const roof = [];
+  const roofHighlight = [];
+
+  for (let x = -half; x <= half; x++) {
+    for (let z = -half; z <= half; z++) foundation.push([x, 0, z]);
+  }
+
+  for (let y = 1; y <= wallHeight; y++) {
+    for (let x = -half; x <= half; x++) {
+      for (let z = -half; z <= half; z++) {
+        const perimeter = Math.abs(x) === half || Math.abs(z) === half;
+        if (!perimeter) continue;
+        const front = z === half;
+        const side = Math.abs(x) === half;
+        const back = z === -half;
+        // Door is centered on the front face, under the sign - not the side
+        // wall (that was the bug: the original template puts its door on
+        // whichever wall faces the road, which isn't "front" here).
+        const doorway = front && Math.abs(x) <= 2 && y <= 7;
+        const houseFrontWindow = front && y >= 4 && y <= Math.min(8, wallHeight - 2) && ((x >= -half + 1 && x <= -half + 3) || (x >= half - 3 && x <= half - 1));
+        const sideWindow = side && y >= 4 && y <= wallHeight - 2 && Math.abs(z) > 2 && z % 5 >= -1 && z % 5 <= 1;
+        const backWindow = back && y >= 5 && y <= wallHeight - 2 && Math.abs(x) <= half - 3 && Math.abs(x) % 5 <= 1;
+
+        if (doorway) door.push([x, y, z]);
+        else if (houseFrontWindow || sideWindow || backWindow) glass.push([x, y, z]);
+        else if (y === 1 || y === wallHeight || (Math.abs(x) === half && Math.abs(z) === half)) trim.push([x, y, z]);
+        else walls.push([x, y, z]);
+      }
+    }
+  }
+
+  for (let level = 0; level < roofHeight; level++) {
+    const roofHalf = Math.max(2, half - Math.floor(level * 0.7));
+    for (let x = -roofHalf; x <= roofHalf; x++) {
+      for (let z = -roofHalf; z <= roofHalf; z++) {
+        const edge = Math.abs(x) === roofHalf || Math.abs(z) === roofHalf;
+        (edge ? roofHighlight : roof).push([x, wallHeight + 1 + level, z]);
+      }
+    }
+  }
+
+  createBuildingLayer(`${config.name}Foundation`, origin, foundation, config.colors.foundation);
+  createBuildingLayer(`${config.name}Walls`, origin, walls, config.colors.wall);
+  createBuildingLayer(`${config.name}Trim`, origin, trim, config.colors.trim);
+  createBuildingLayer(`${config.name}Glass`, origin, glass, config.colors.glass);
+  createBuildingLayer(`${config.name}Door`, origin, door, config.colors.door);
+  createBuildingLayer(`${config.name}Roof`, origin, roof, config.colors.roof);
+  createBuildingLayer(`${config.name}RoofHighlights`, origin, roofHighlight, config.colors.trim);
+
+  houseColliders.push({
+    minX: origin.x - (half + 0.65) * tileSize,
+    maxX: origin.x + (half + 0.65) * tileSize,
+    minZ: origin.z - (half + 0.65) * tileSize,
+    maxZ: origin.z + (half + 0.65) * tileSize
+  });
+  // Small step-up zone in front of the door (not to the side - the door
+  // faces +Z now, matching the sign and the fence gate).
+  walkableStepZones.push({
+    minX: origin.x - 2.5 * tileSize,
+    maxX: origin.x + 2.5 * tileSize,
+    minZ: origin.z + (half + 0.5) * tileSize,
+    maxZ: origin.z + (half + 2.5) * tileSize,
+    height: tileSize
+  });
+
+  createEvacuationSign(config, origin);
+  createShelterFence(config, origin.x, origin.z, groundY);
+}
+
+buildEvacuationShelter();
+// -------------------------------------------------------------------------
+
 function createBlockRamp() {
   const topCells = [];
   const fillCells = [];
@@ -1756,6 +2085,22 @@ characterCards.forEach((card) => {
 });
 
 const keys = new Set();
+// keydown re-fires on the browser's key-repeat timer for as long as a key is
+// genuinely held down. Tracking when each key was last (re-)pressed lets us
+// self-heal a "stuck" key whose keyup got missed - e.g. a synchronous
+// confirm() dialog, or focus moving to a button/checkbox mid-press, can
+// swallow it - instead of the character walking forever with no way to stop.
+const keyLastSeen = new Map();
+const STUCK_KEY_TIMEOUT_MS = 800;
+function pruneStaleKeys(now) {
+  for (const code of keys) {
+    const lastSeen = keyLastSeen.get(code);
+    if (lastSeen === undefined || now - lastSeen > STUCK_KEY_TIMEOUT_MS) {
+      keys.delete(code);
+      keyLastSeen.delete(code);
+    }
+  }
+}
 let cameraYaw = 0;
 let cameraPitch = 0.32;
 const cameraPitchMin = -0.38;
@@ -1775,6 +2120,7 @@ const desiredCamera = new THREE.Vector3();
 addEventListener('keydown', (event) => {
   if (!characterChosen) return;
   keys.add(event.code);
+  keyLastSeen.set(event.code, performance.now());
   if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) {
     event.preventDefault();
     guide.classList.add('is-hidden');
@@ -1787,7 +2133,10 @@ addEventListener('keydown', (event) => {
     if (grounded) verticalVelocity = jumpVelocity;
   }
 });
-addEventListener('keyup', (event) => keys.delete(event.code));
+addEventListener('keyup', (event) => {
+  keys.delete(event.code);
+  keyLastSeen.delete(event.code);
+});
 
 // If the window/tab loses focus while a movement key is held down (alt-tab,
 // clicking a browser dialog, switching tabs, dragging outside the canvas...)
@@ -1796,6 +2145,7 @@ addEventListener('keyup', (event) => keys.delete(event.code));
 // whenever we can no longer be sure we'll see the matching keyup.
 function releaseAllKeys() {
   keys.clear();
+  keyLastSeen.clear();
 }
 addEventListener('blur', releaseAllKeys);
 document.addEventListener('visibilitychange', () => {
@@ -1815,20 +2165,23 @@ function savePaintOverrides() {
   try {
     localStorage.setItem(PAINT_STORAGE_KEY, JSON.stringify([...tilePaintOverrides]));
     localStorage.setItem(HEIGHT_STORAGE_KEY, JSON.stringify([...heightPaintOverrides]));
+    localStorage.setItem(FLOATING_STORAGE_KEY, JSON.stringify([...floatingBlocks]));
   } catch (error) {
     console.warn('Could not save paint overrides:', error);
   }
 }
 
 let heightDirty = false;
+let floatingDirty = false;
 
 // Undo/redo history. Each entry in the stack is a "batch" (everything one
 // click/drag stroke or one クリア changed): a list of
-// { map: 'tile' | 'height', key, before, after }, where before/after of
-// `undefined` means the key was absent (i.e. undo/redo deletes it).
+// { map: 'tile' | 'height' | 'floating', key, before, after }, where
+// before/after of `undefined` means the key was absent (i.e. undo/redo
+// deletes it).
 const undoStack = [];
 const redoStack = [];
-const overrideMaps = { tile: tilePaintOverrides, height: heightPaintOverrides };
+const overrideMaps = { tile: tilePaintOverrides, height: heightPaintOverrides, floating: floatingBlocks };
 
 function recordChange(batch, mapName, key, before, after) {
   if (before === after) return;
@@ -1850,6 +2203,7 @@ function applyBatch(batch, useAfter) {
   }
   heightDirty = true;
   paintDirty = true;
+  floatingDirty = true;
 }
 
 function undo() {
@@ -1936,15 +2290,309 @@ function paintAt(clientX, clientY) {
 }
 
 function applyPaintIfDirty() {
-  if (!paintDirty && !heightDirty) return;
+  if (!paintDirty && !heightDirty && !floatingDirty) return;
   paintDirty = false;
   heightDirty = false;
+  if (floatingDirty) {
+    floatingDirty = false;
+    buildFloatingBlocks();
+  }
   buildTerrainFillBlocks();
   buildPaintableTiles();
   buildBlockRamp();
   updateTufts();
   savePaintOverrides();
 }
+
+// --- Range select + place -------------------------------------------------
+// A second way to build, alongside single-tile/brush painting above. Two
+// steps: (1) drag a rectangle on the ground to pick the X/Z footprint, block
+// by block, (2) drag up/down to pick how tall the fill should be. Once both
+// are set, every click stamps that whole box with the current material at
+// that exact height. Right-drag still orbits the camera throughout, since
+// that's handled by the generic pointerdown/move fallback below.
+function currentEditTarget() {
+  return document.querySelector('input[name="editTarget"]:checked').value;
+}
+
+// Floating slabs (detached from the ground) render as simple solid boxes
+// outside the `field` group, so they never interfere with the ground-only
+// raycasting used to pick the X/Z footprint.
+const floatingBlocksMeshGroup = new THREE.Group();
+floatingBlocksMeshGroup.name = 'FloatingRangeBlocks';
+scene.add(floatingBlocksMeshGroup);
+const FLOATING_MATERIAL_COLORS = { road: 0x9a958c, grass: 0x5fae4a };
+
+function buildFloatingBlocks() {
+  while (floatingBlocksMeshGroup.children.length) {
+    const mesh = floatingBlocksMeshGroup.children.pop();
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  }
+  for (const [, entry] of floatingBlocks) {
+    const width = (entry.maxX - entry.minX + 1) * tileSize;
+    const depth = (entry.maxZ - entry.minZ + 1) * tileSize;
+    const height = (entry.top - entry.bottom) * tileSize;
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(width, height, depth),
+      new THREE.MeshStandardMaterial({
+        color: FLOATING_MATERIAL_COLORS[entry.material] || 0xffffff,
+        roughness: 0.85
+      })
+    );
+    mesh.position.set(
+      worldXFromBlock(entry.minX) + width / 2,
+      entry.bottom * tileSize + height / 2,
+      worldZFromBlock(entry.minZ) + depth / 2
+    );
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    floatingBlocksMeshGroup.add(mesh);
+  }
+}
+buildFloatingBlocks();
+
+let rangeStage = 0; // 0 = pick X/Z footprint, 1 = pick height, 2 = ready to place
+let rangeDragging = false;
+let rangeAnchorX = 0;
+let rangeAnchorZ = 0;
+let rangeMinX = 0;
+let rangeMaxX = 0;
+let rangeMinZ = 0;
+let rangeMaxZ = 0;
+let rangeHeight = 1;
+let rangeYAnchorScreenY = 0;
+let rangeYAnchorHeight = 1;
+// Floating mode: the drag moves the whole fixed-thickness slab through the
+// air instead of extruding up from the ground. rangeIsFloating is latched
+// from the checkbox when the footprint is confirmed, so toggling the
+// checkbox mid-drag can't change what's about to be placed.
+let rangeIsFloating = false;
+let rangeFloatBottom = 0;
+const RANGE_FLOAT_THICKNESS = 1;
+const RANGE_MAX_HEIGHT = 40;
+const RANGE_DRAG_PIXELS_PER_BLOCK = 18;
+
+// depthTest is disabled and renderOrder is high so the highlight always draws
+// on top of terrain/blocks instead of getting buried inside them - the box's
+// footprint can sit level with or below the surrounding ground, so relying on
+// normal depth testing would hide most of it.
+const rangeBoxGeometry = new THREE.BoxGeometry(1, 1, 1);
+const rangeBoxHelper = new THREE.Group();
+const rangeBoxFill = new THREE.Mesh(
+  rangeBoxGeometry,
+  new THREE.MeshBasicMaterial({
+    color: 0xffd23f, transparent: true, opacity: 0.28,
+    depthTest: false, depthWrite: false, side: THREE.DoubleSide
+  })
+);
+const rangeBoxWire = new THREE.LineSegments(
+  new THREE.EdgesGeometry(rangeBoxGeometry),
+  new THREE.LineBasicMaterial({ color: 0xfff3c4, depthTest: false, linewidth: 2 })
+);
+rangeBoxFill.renderOrder = 999;
+rangeBoxWire.renderOrder = 1000;
+rangeBoxHelper.add(rangeBoxFill, rangeBoxWire);
+rangeBoxHelper.visible = false;
+scene.add(rangeBoxHelper);
+
+function rangeBlockFromClient(clientX, clientY) {
+  paintPointer.set((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1);
+  paintRaycaster.setFromCamera(paintPointer, camera);
+  const hits = paintRaycaster.intersectObject(field, true);
+  if (!hits.length) return null;
+  const point = hits[0].point;
+  return {
+    x: THREE.MathUtils.clamp(Math.floor(blockXFromWorld(point.x)), 0, tilesWide - 1),
+    z: THREE.MathUtils.clamp(Math.floor(blockZFromWorld(point.z)), 0, tilesDeep - 1)
+  };
+}
+
+// The ground is rarely flat (ramps, the spawn plateau, riverbanks...), so the
+// highlight has to sit on the actual terrain surface under the selection -
+// not at a fixed y=0 - or it visibly drifts away from the cursor on sloped
+// ground. Sampling the corners + center is cheap and close enough even for
+// a selection spanning much of the map.
+function sampledGroundHeightBlocks(minX, maxX, minZ, maxZ) {
+  const xs = [minX, maxX, Math.round((minX + maxX) / 2)];
+  const zs = [minZ, maxZ, Math.round((minZ + maxZ) / 2)];
+  let maxHeight = 0;
+  for (const x of xs) {
+    for (const z of zs) {
+      const bx = THREE.MathUtils.clamp(x, 0, tilesWide - 1);
+      const bz = THREE.MathUtils.clamp(z, 0, tilesDeep - 1);
+      maxHeight = Math.max(maxHeight, getTerrainHeightBlocks(bx, bz));
+    }
+  }
+  return maxHeight;
+}
+
+function applyRangeBoxTransform(bottomBlocks, topBlocks) {
+  const width = (rangeMaxX - rangeMinX + 1) * tileSize;
+  const depth = (rangeMaxZ - rangeMinZ + 1) * tileSize;
+  const bottom = bottomBlocks * tileSize;
+  const height = (topBlocks - bottomBlocks) * tileSize;
+  rangeBoxHelper.scale.set(width, height, depth);
+  rangeBoxHelper.position.set(
+    worldXFromBlock(rangeMinX) + width / 2,
+    bottom + height / 2,
+    worldZFromBlock(rangeMinZ) + depth / 2
+  );
+  rangeBoxHelper.visible = true;
+}
+
+// Stage 0 (still picking the footprint): a thin marker hugging the ground.
+function updateRangeFootprintPreview() {
+  const groundBlocks = sampledGroundHeightBlocks(rangeMinX, rangeMaxX, rangeMinZ, rangeMaxZ);
+  applyRangeBoxTransform(groundBlocks, groundBlocks + 0.06);
+}
+
+// Stage 1+ (picking/confirmed height): extrude from the ground up to the
+// chosen absolute height (or down, if the target is below the surface).
+function updateRangeHeightPreview(topBlocks) {
+  const groundBlocks = sampledGroundHeightBlocks(rangeMinX, rangeMaxX, rangeMinZ, rangeMaxZ);
+  const bottomBlocks = Math.min(groundBlocks, topBlocks);
+  const clampedTop = Math.max(topBlocks, bottomBlocks + 0.06);
+  applyRangeBoxTransform(bottomBlocks, clampedTop);
+}
+
+// Floating mode: the box never touches the ground, so its bottom/top are
+// exactly what was dragged - no clamping against terrain height.
+function updateRangeFloatingPreview(bottomBlocks, topBlocks) {
+  applyRangeBoxTransform(bottomBlocks, topBlocks);
+}
+
+function setRangeStatus(text) {
+  if (rangeStatus) rangeStatus.textContent = text;
+}
+
+function resetRangeSelection() {
+  rangeStage = 0;
+  rangeDragging = false;
+  rangeBoxHelper.visible = false;
+  setRangeStatus('左クリックしたまま範囲の対角までドラッグしてください');
+}
+
+function placeRangeBlocks() {
+  const material = document.querySelector('input[name="paintMaterial"]:checked').value;
+
+  if (rangeIsFloating) {
+    const key = String(floatingBlockSeq++);
+    const descriptor = {
+      minX: rangeMinX, maxX: rangeMaxX, minZ: rangeMinZ, maxZ: rangeMaxZ,
+      bottom: rangeFloatBottom, top: rangeHeight, material
+    };
+    floatingBlocks.set(key, descriptor);
+    floatingDirty = true;
+    pushHistory([{ map: 'floating', key, before: undefined, after: descriptor }]);
+    setRangeStatus(`高さ ${rangeFloatBottom}〜${rangeHeight} ブロックの空中に配置しました。続けて配置するか「選択をやり直す」で範囲を選び直せます`);
+    return;
+  }
+
+  const batch = [];
+  let changed = false;
+  for (let z = rangeMinZ; z <= rangeMaxZ; z++) {
+    for (let x = rangeMinX; x <= rangeMaxX; x++) {
+      if (isRiverBlock(x, z) || isRampActive(x, z)) continue;
+      const key = x + ',' + z;
+      const before = heightPaintOverrides.get(key) || 0;
+      const base = getBaseTerrainHeightBlocks(x, z);
+      const afterValue = THREE.MathUtils.clamp(rangeHeight - base, -base, 40 - base);
+      const after = afterValue === 0 ? undefined : afterValue;
+      if (after === undefined) heightPaintOverrides.delete(key);
+      else heightPaintOverrides.set(key, after);
+      const beforeRecorded = before === 0 ? undefined : before;
+      recordChange(batch, 'height', key, beforeRecorded, after);
+      if (beforeRecorded !== after) changed = true;
+      if (stampMaterial(x, z, material, batch)) changed = true;
+    }
+  }
+  if (changed) { heightDirty = true; paintDirty = true; }
+  pushHistory(batch);
+  setRangeStatus(`高さ ${rangeHeight} ブロックで配置しました。続けて配置するか「選択をやり直す」で範囲を選び直せます`);
+}
+
+function handleRangePointerDown(event) {
+  if (rangeStage === 0) {
+    const block = rangeBlockFromClient(event.clientX, event.clientY);
+    if (!block) return;
+    rangeDragging = true;
+    rangeAnchorX = block.x;
+    rangeAnchorZ = block.z;
+    rangeMinX = rangeMaxX = block.x;
+    rangeMinZ = rangeMaxZ = block.z;
+    updateRangeFootprintPreview();
+    setRangeStatus('ドラッグして範囲を決め、指を離すと高さ選択に進みます');
+    return;
+  }
+  if (rangeStage === 1) {
+    rangeDragging = true;
+    rangeYAnchorScreenY = event.clientY;
+    rangeYAnchorHeight = rangeIsFloating ? rangeFloatBottom : rangeHeight;
+    setRangeStatus(rangeIsFloating
+      ? `高さ: ${rangeFloatBottom}〜${rangeHeight} ブロック（上下ドラッグで空間ごと移動、離すと確定）`
+      : `高さ: ${rangeHeight} ブロック（上下ドラッグで調整、離すと確定）`);
+    return;
+  }
+  if (rangeStage === 2) {
+    placeRangeBlocks();
+  }
+}
+
+function handleRangePointerMove(event) {
+  if (!rangeDragging) return;
+  if (rangeStage === 0) {
+    const block = rangeBlockFromClient(event.clientX, event.clientY);
+    if (!block) return;
+    rangeMinX = Math.min(rangeAnchorX, block.x);
+    rangeMaxX = Math.max(rangeAnchorX, block.x);
+    rangeMinZ = Math.min(rangeAnchorZ, block.z);
+    rangeMaxZ = Math.max(rangeAnchorZ, block.z);
+    updateRangeFootprintPreview();
+    return;
+  }
+  if (rangeStage === 1) {
+    const deltaBlocks = Math.round((rangeYAnchorScreenY - event.clientY) / RANGE_DRAG_PIXELS_PER_BLOCK);
+    if (rangeIsFloating) {
+      rangeFloatBottom = THREE.MathUtils.clamp(rangeYAnchorHeight + deltaBlocks, 0, RANGE_MAX_HEIGHT - RANGE_FLOAT_THICKNESS);
+      rangeHeight = rangeFloatBottom + RANGE_FLOAT_THICKNESS;
+      updateRangeFloatingPreview(rangeFloatBottom, rangeHeight);
+      setRangeStatus(`高さ: ${rangeFloatBottom}〜${rangeHeight} ブロック（上下ドラッグで空間ごと移動、離すと確定）`);
+    } else {
+      rangeHeight = THREE.MathUtils.clamp(rangeYAnchorHeight + deltaBlocks, 1, RANGE_MAX_HEIGHT);
+      updateRangeHeightPreview(rangeHeight);
+      setRangeStatus(`高さ: ${rangeHeight} ブロック（上下ドラッグで調整、離すと確定）`);
+    }
+  }
+}
+
+function handleRangePointerUp() {
+  if (!rangeDragging) return;
+  rangeDragging = false;
+  if (rangeStage === 0) {
+    rangeStage = 1;
+    const groundBlocks = sampledGroundHeightBlocks(rangeMinX, rangeMaxX, rangeMinZ, rangeMaxZ);
+    rangeIsFloating = !!rangeFloatToggle && rangeFloatToggle.checked;
+    if (rangeIsFloating) {
+      rangeFloatBottom = THREE.MathUtils.clamp(groundBlocks + 3, 0, RANGE_MAX_HEIGHT - RANGE_FLOAT_THICKNESS);
+      rangeHeight = rangeFloatBottom + RANGE_FLOAT_THICKNESS;
+      updateRangeFloatingPreview(rangeFloatBottom, rangeHeight);
+      setRangeStatus('クリックしたまま上下にドラッグして、空中に浮かせる高さを決めてください');
+    } else {
+      rangeHeight = THREE.MathUtils.clamp(groundBlocks + 1, 1, RANGE_MAX_HEIGHT);
+      updateRangeHeightPreview(rangeHeight);
+      setRangeStatus('クリックしたまま上下にドラッグして高さを決めてください');
+    }
+  } else if (rangeStage === 1) {
+    rangeStage = 2;
+    setRangeStatus(rangeIsFloating
+      ? `高さ ${rangeFloatBottom}〜${rangeHeight} ブロックで確定。クリックでこの空間にブロックを配置します`
+      : `高さ ${rangeHeight} ブロックで確定。クリックでこの空間にブロックを配置します`);
+  }
+}
+
+rangeResetButton.addEventListener('click', resetRangeSelection);
+// --------------------------------------------------------------------------
 
 canvas.addEventListener('contextmenu', (event) => event.preventDefault());
 
@@ -1972,6 +2620,11 @@ function stopPaintLoop() {
 
 canvas.addEventListener('pointerdown', (event) => {
   guide.classList.add('is-hidden');
+  if (editMode && event.button === 0 && currentEditTarget() === 'range') {
+    canvas.setPointerCapture(event.pointerId);
+    handleRangePointerDown(event);
+    return;
+  }
   if (editMode && event.button === 0) {
     painting = true;
     canvas.setPointerCapture(event.pointerId);
@@ -1985,9 +2638,14 @@ canvas.addEventListener('pointerup', (event) => {
   dragging = false;
   painting = false;
   stopPaintLoop();
+  handleRangePointerUp();
   canvas.releasePointerCapture(event.pointerId);
 });
 canvas.addEventListener('pointermove', (event) => {
+  if (rangeDragging) {
+    handleRangePointerMove(event);
+    return;
+  }
   if (painting) {
     lastPaintX = event.clientX;
     lastPaintY = event.clientY;
@@ -2005,13 +2663,17 @@ editToggle.addEventListener('click', () => {
   editMode = !editMode;
   editTools.classList.toggle('is-hidden', !editMode);
   editToggle.classList.toggle('is-active', editMode);
+  if (!editMode) resetRangeSelection();
 });
 
 function updateEditToolsVisibility() {
-  const target = document.querySelector('input[name="editTarget"]:checked').value;
+  const target = currentEditTarget();
   const action = document.querySelector('input[name="paintAction"]:checked').value;
   blockActionRow.classList.toggle('is-hidden', target !== 'block');
   materialRow.classList.toggle('is-hidden', target === 'block' && action === 'remove');
+  rangeRow.classList.toggle('is-hidden', target !== 'range');
+  brushSizeRow.classList.toggle('is-hidden', target === 'range');
+  if (target !== 'range') resetRangeSelection();
 }
 
 document.querySelectorAll('input[name="editTarget"], input[name="paintAction"]').forEach((input) => {
@@ -2024,7 +2686,8 @@ exportPaintButton.addEventListener('click', () => {
     [JSON.stringify({
       version: 2,
       overrides: [...tilePaintOverrides],
-      heightOverrides: [...heightPaintOverrides]
+      heightOverrides: [...heightPaintOverrides],
+      floatingRangeBlocks: [...floatingBlocks]
     }, null, 2)],
     { type: 'application/json' }
   );
@@ -2037,15 +2700,22 @@ exportPaintButton.addEventListener('click', () => {
 });
 
 clearPaintButton.addEventListener('click', () => {
-  if (tilePaintOverrides.size === 0 && heightPaintOverrides.size === 0) return;
+  if (tilePaintOverrides.size === 0 && heightPaintOverrides.size === 0 && floatingBlocks.size === 0) return;
+  // confirm() blocks the JS thread; a movement key held down when it opens
+  // can miss its keyup entirely, so release everything before showing it
+  // rather than relying only on the stale-key watchdog to catch it later.
+  releaseAllKeys();
   if (!confirm('編集した内容をすべて削除します。よろしいですか？')) return;
   const batch = [];
   for (const [key, before] of tilePaintOverrides) recordChange(batch, 'tile', key, before, undefined);
   for (const [key, before] of heightPaintOverrides) recordChange(batch, 'height', key, before, undefined);
+  for (const [key, before] of floatingBlocks) recordChange(batch, 'floating', key, before, undefined);
   tilePaintOverrides.clear();
   heightPaintOverrides.clear();
+  floatingBlocks.clear();
   paintDirty = true;
   heightDirty = true;
+  floatingDirty = true;
   pushHistory(batch);
 });
 
@@ -2201,6 +2871,7 @@ function initMinimap() {
 
 function updatePlayer(dt) {
   if (!characterChosen) return;
+  pruneStaleKeys(performance.now());
   let side = 0;
   let forward = 0;
   if (keys.has('KeyW') || keys.has('ArrowUp')) forward += 1;

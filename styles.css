@@ -256,6 +256,36 @@ body {
   border-top: 1px solid rgba(255, 255, 255, 0.2);
 }
 
+.range-status {
+  margin: 0;
+  padding: 7px 9px;
+  color: #d9eff7;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.range-float-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #d9eff7;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+}
+
+.range-float-toggle input {
+  width: 15px;
+  height: 15px;
+  accent-color: #2f7dc4;
+  cursor: pointer;
+}
+
 .edit-tools-footer button {
   flex: 1;
   padding: 8px 6px;

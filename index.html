@@ -52,6 +52,19 @@
         <div class="segmented">
           <label><input type="radio" name="editTarget" value="tile" checked><span>タイル</span></label>
           <label><input type="radio" name="editTarget" value="block"><span>ブロック</span></label>
+          <label><input type="radio" name="editTarget" value="range"><span>範囲選択</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="edit-fieldset is-hidden" id="rangeRow">
+        <legend>範囲選択</legend>
+        <p class="range-status" id="rangeStatus">左クリックしたまま範囲の対角までドラッグしてください</p>
+        <label class="range-float-toggle">
+          <input type="checkbox" id="rangeFloatToggle">
+          <span>地面から浮かせて配置する</span>
+        </label>
+        <div class="edit-tools-footer">
+          <button id="rangeReset" type="button">選択をやり直す</button>
         </div>
       </fieldset>
 
@@ -71,7 +84,7 @@
         </div>
       </fieldset>
 
-      <fieldset class="edit-fieldset">
+      <fieldset class="edit-fieldset" id="brushSizeRow">
         <legend>ブラシサイズ</legend>
         <select id="brushSize">
           <option value="1" selected>1×1</option>
