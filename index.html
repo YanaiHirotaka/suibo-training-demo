@@ -56,10 +56,22 @@
         </div>
       </fieldset>
 
+      <fieldset class="edit-fieldset is-hidden" id="structureRow">
+        <legend>建物の移動</legend>
+        <p class="range-status" id="structureStatus"></p>
+        <div class="edit-tools-footer">
+          <button id="structureDeselect" type="button">選択を解除</button>
+        </div>
+      </fieldset>
+
       <fieldset class="edit-fieldset is-hidden" id="rangeRow">
         <legend>範囲選択</legend>
+        <div class="segmented">
+          <label><input type="radio" name="rangeAction" value="block" checked><span>ブロックを積む</span></label>
+          <label><input type="radio" name="rangeAction" value="tile"><span>タイルを変更</span></label>
+        </div>
         <p class="range-status" id="rangeStatus">左クリックしたまま範囲の対角までドラッグしてください</p>
-        <label class="range-float-toggle">
+        <label class="range-float-toggle" id="rangeFloatToggleRow">
           <input type="checkbox" id="rangeFloatToggle">
           <span>地面から浮かせて配置する</span>
         </label>
@@ -98,7 +110,7 @@
         <button id="exportPaint" type="button">エクスポート</button>
         <button id="clearPaint" type="button" class="danger">すべて削除</button>
       </div>
-      <small>左クリック長押し：編集　右ドラッグ：カメラ<br>変更は自動保存されます</small>
+      <small>左クリック長押し：編集　右ドラッグ：カメラ<br>Esc：編集モードを終了　変更は自動保存されます</small>
     </div>
   </div>
 
