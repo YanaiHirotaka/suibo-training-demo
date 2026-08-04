@@ -1101,6 +1101,18 @@ try {
   console.warn('Could not load floating range blocks:', error);
 }
 
+// Moved-building positions from the "select and move" edit tool. Keyed by
+// the building's group.name (a stable per-structure id, e.g.
+// 'EvacuationShelter') rather than its array index, since index would shift
+// if structures are ever added/removed/reordered in source. Baked-in
+// defaults ship the same way as the tile/height overrides above; live
+// localStorage edits from this browser layer on top and are applied once
+// all structures exist (see loadStructureOffsets below buildEvacuationShelter).
+const STRUCTURE_STORAGE_KEY = 'suiboStructureOffsets';
+const DEFAULT_STRUCTURE_OFFSETS = [
+  ['EvacuationShelter', { x: -87, z: -32 }]
+];
+
 function baseTileType(x, z) {
   if (isRiverBlock(x, z)) return 'river';
   if (isRoadBlock(x, z)) return 'road';
@@ -2189,6 +2201,23 @@ function buildEvacuationShelter() {
 }
 
 buildEvacuationShelter();
+
+// Apply moved-building positions now that every structure has been built and
+// registered: baked-in defaults first, then any saved edits from this
+// browser layered on top (same override pattern as the tile/height data).
+(function loadStructureOffsets() {
+  const offsets = new Map(DEFAULT_STRUCTURE_OFFSETS);
+  try {
+    const saved = JSON.parse(localStorage.getItem(STRUCTURE_STORAGE_KEY) || '[]');
+    for (const [name, offset] of saved) offsets.set(name, offset);
+  } catch (error) {
+    console.warn('Could not load structure offsets:', error);
+  }
+  for (const entry of movableStructures) {
+    const offset = offsets.get(entry.group.name);
+    if (offset) setStructureOffset(entry, offset.x, offset.z);
+  }
+})();
 // -------------------------------------------------------------------------
 
 function createBlockRamp() {
@@ -3348,6 +3377,17 @@ function structureAtPointer(clientX, clientY) {
   return best ? best.entry : null;
 }
 
+function saveStructureOffsets() {
+  try {
+    const moved = movableStructures
+      .filter((s) => s.offsetX !== 0 || s.offsetZ !== 0)
+      .map((s) => [s.group.name, { x: s.offsetX, z: s.offsetZ }]);
+    localStorage.setItem(STRUCTURE_STORAGE_KEY, JSON.stringify(moved));
+  } catch (error) {
+    console.warn('Could not save structure offsets:', error);
+  }
+}
+
 // Places a structure at an absolute block offset from where it was built.
 function setStructureOffset(entry, offsetX, offsetZ) {
   entry.offsetX = offsetX;
@@ -3375,6 +3415,8 @@ function setStructureOffset(entry, offsetX, offsetZ) {
     box.minZ = base.minZ + worldDZ;
     box.maxZ = base.maxZ + worldDZ;
   }
+
+  saveStructureOffsets();
 }
 
 // Called by undo/redo for { map: 'structure' } history entries.
@@ -3544,12 +3586,16 @@ document.querySelectorAll('input[name="editTarget"], input[name="paintAction"], 
 updateEditToolsVisibility();
 
 exportPaintButton.addEventListener('click', () => {
+  const structureOffsets = movableStructures
+    .filter((s) => s.offsetX !== 0 || s.offsetZ !== 0)
+    .map((s) => [s.group.name, { x: s.offsetX, z: s.offsetZ }]);
   const blob = new Blob(
     [JSON.stringify({
-      version: 2,
+      version: 3,
       overrides: [...tilePaintOverrides],
       heightOverrides: [...heightPaintOverrides],
-      floatingRangeBlocks: [...floatingBlocks]
+      floatingRangeBlocks: [...floatingBlocks],
+      structureOffsets
     }, null, 2)],
     { type: 'application/json' }
   );
@@ -3562,7 +3608,8 @@ exportPaintButton.addEventListener('click', () => {
 });
 
 clearPaintButton.addEventListener('click', () => {
-  if (tilePaintOverrides.size === 0 && heightPaintOverrides.size === 0 && floatingBlocks.size === 0) return;
+  const movedStructures = movableStructures.filter((s) => s.offsetX !== 0 || s.offsetZ !== 0);
+  if (tilePaintOverrides.size === 0 && heightPaintOverrides.size === 0 && floatingBlocks.size === 0 && movedStructures.length === 0) return;
   // confirm() blocks the JS thread; a movement key held down when it opens
   // can miss its keyup entirely, so release everything before showing it
   // rather than relying only on the stale-key watchdog to catch it later.
@@ -3572,12 +3619,20 @@ clearPaintButton.addEventListener('click', () => {
   for (const [key, before] of tilePaintOverrides) recordChange(batch, 'tile', key, before, undefined);
   for (const [key, before] of heightPaintOverrides) recordChange(batch, 'height', key, before, undefined);
   for (const [key, before] of floatingBlocks) recordChange(batch, 'floating', key, before, undefined);
+  for (const entry of movedStructures) {
+    recordChange(batch, 'structure', movableStructures.indexOf(entry), { x: entry.offsetX, z: entry.offsetZ }, { x: 0, z: 0 });
+  }
   tilePaintOverrides.clear();
   heightPaintOverrides.clear();
   floatingBlocks.clear();
+  for (const entry of movedStructures) setStructureOffset(entry, 0, 0);
   paintDirty = true;
   heightDirty = true;
   floatingDirty = true;
+  if (selectedStructure && movedStructures.includes(selectedStructure)) {
+    updateStructureHighlight();
+    setStructureStatus(describeSelectedStructure());
+  }
   pushHistory(batch);
 });
 
