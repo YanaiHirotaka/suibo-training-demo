@@ -32,6 +32,12 @@ const minimapHouse = document.querySelector('#minimapHouse');
 const minimapAdditionalHouses = document.querySelector('#minimapAdditionalHouses');
 const minimapPlayer = document.querySelector('#minimapPlayer');
 const minimapSizeLabel = document.querySelector('#minimapSizeLabel');
+const minimapGoal = document.querySelector('#minimapGoal');
+const minimapGoalLine = document.querySelector('#minimapGoalLine');
+const missionReachShelter = document.querySelector('#missionReachShelter');
+const guidanceBanner = document.querySelector('#guidanceBanner');
+const guidanceArrow = document.querySelector('#guidanceArrow');
+const guidanceDistance = document.querySelector('#guidanceDistance');
 
 const mapConfig = Object.freeze({
   // 1 Three.js unit = 1 metre. Keep this value fixed so assets remain the same scale.
@@ -2220,6 +2226,85 @@ buildEvacuationShelter();
 })();
 // -------------------------------------------------------------------------
 
+// --- Mission: reach the shelter --------------------------------------------
+// Minimal first pass at a mission/guidance layer: one objective (walk to the
+// evacuation shelter), a HUD arrow + distance readout that update every
+// frame, and a goal marker on the minimap. Deliberately reads the shelter's
+// LIVE collider (not its static config) so this keeps working if the
+// shelter is ever moved again with the edit-mode "select and move" tool.
+const missionShelter = movableStructures.find((s) => s.group.name === 'EvacuationShelter');
+let missionReachShelterDone = false;
+
+function shelterWorldCenter() {
+  const c = missionShelter.collider;
+  return { x: (c.minX + c.maxX) / 2, z: (c.minZ + c.maxZ) / 2 };
+}
+
+function shelterArrivalRadius() {
+  // A few metres past the collider edge, so "arrived" means reaching the
+  // building's plaza/fence line rather than the exact wall.
+  const c = missionShelter.collider;
+  return (c.maxX - c.minX) / 2 + 3;
+}
+
+function completeMissionReachShelter() {
+  if (missionReachShelterDone) return;
+  missionReachShelterDone = true;
+  missionReachShelter.classList.add('is-done');
+  guidanceArrow.textContent = '✓';
+  guidanceBanner.querySelector('strong').textContent = '避難所に到着しました！';
+  guidanceDistance.textContent = 'ミッション達成';
+}
+
+function updateMissionGuidance() {
+  if (!missionShelter) return;
+  if (!characterChosen) {
+    guidanceBanner.classList.add('is-hidden');
+    minimapGoal.setAttribute('opacity', '0');
+    minimapGoalLine.setAttribute('opacity', '0');
+    return;
+  }
+
+  const goal = shelterWorldCenter();
+  const dx = goal.x - player.position.x;
+  const dz = goal.z - player.position.z;
+  const distance = Math.hypot(dx, dz);
+
+  if (!missionReachShelterDone && distance < shelterArrivalRadius()) {
+    completeMissionReachShelter();
+  }
+
+  guidanceBanner.classList.remove('is-hidden');
+  if (!missionReachShelterDone) {
+    // 1 Three.js unit = 1 metre (see mapConfig), so distance is already in
+    // metres - no unit conversion needed, just round for display.
+    guidanceDistance.textContent = `${Math.round(distance)}m`;
+    // Arrow is screen-relative, not world-relative: 0deg (pointing up) means
+    // "the shelter is directly ahead of the camera view". Project the
+    // world-space direction to the goal onto the camera's forward/right
+    // axes (same vectors as cameraForward/cameraRight in updatePlayer) and
+    // read off the angle - CSS rotate() is clockwise, matching "right" being
+    // a positive angle from "up".
+    const forwardComponent = dx * -Math.sin(cameraYaw) + dz * -Math.cos(cameraYaw);
+    const rightComponent = dx * Math.cos(cameraYaw) + dz * -Math.sin(cameraYaw);
+    const arrowDeg = THREE.MathUtils.radToDeg(Math.atan2(rightComponent, forwardComponent));
+    guidanceArrow.style.transform = `rotate(${arrowDeg}deg)`;
+  }
+
+  const goalBlockX = THREE.MathUtils.clamp(blockXFromWorld(goal.x), 0, tilesWide);
+  const goalBlockZ = THREE.MathUtils.clamp(blockZFromWorld(goal.z), 0, tilesDeep);
+  minimapGoal.setAttribute('transform', `translate(${goalBlockX.toFixed(2)} ${goalBlockZ.toFixed(2)})`);
+  minimapGoal.setAttribute('opacity', '1');
+  const playerBlockX = blockXFromWorld(player.position.x);
+  const playerBlockZ = blockZFromWorld(player.position.z);
+  minimapGoalLine.setAttribute('x1', playerBlockX.toFixed(2));
+  minimapGoalLine.setAttribute('y1', playerBlockZ.toFixed(2));
+  minimapGoalLine.setAttribute('x2', goalBlockX.toFixed(2));
+  minimapGoalLine.setAttribute('y2', goalBlockZ.toFixed(2));
+  minimapGoalLine.setAttribute('opacity', missionReachShelterDone ? '0' : '0.85');
+}
+// --------------------------------------------------------------------------
+
 function createBlockRamp() {
   const topCells = [];
   const fillCells = [];
@@ -3922,6 +4007,7 @@ function animate(now) {
   updatePlayer(dt);
   updateCamera(dt);
   updateMinimap();
+  updateMissionGuidance();
   updateRiver(now);
   renderer.render(scene, camera);
 

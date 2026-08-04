@@ -12,6 +12,24 @@
 
   <div class="fps-counter" id="fpsCounter">-- FPS</div>
 
+  <aside class="mission-panel" id="missionPanel" aria-label="ミッション">
+    <header>ミッション</header>
+    <ul class="mission-list" id="missionList">
+      <li class="mission-item" id="missionReachShelter">
+        <span class="mission-check">✓</span>
+        <span class="mission-text">避難所へ移動しよう</span>
+      </li>
+    </ul>
+  </aside>
+
+  <div class="guidance-banner is-hidden" id="guidanceBanner">
+    <span class="guidance-arrow" id="guidanceArrow">⬆</span>
+    <span class="guidance-info">
+      <strong>避難所へ向かおう</strong>
+      <span id="guidanceDistance">-- m</span>
+    </span>
+  </div>
+
   <aside class="minimap-panel" aria-label="フィールド全体ミニマップ">
     <header>ミニマップ</header>
     <svg class="minimap-map" id="minimapMap" viewBox="0 0 105 120" preserveAspectRatio="xMidYMid meet" role="img" aria-label="105×120ブロックのフィールドと現在地">
@@ -28,6 +46,11 @@
         <path id="minimapRiver" d="" fill="#1f91d1" opacity=".86"/>
         <g class="minimap-house" id="minimapHouse" transform="translate(60 107.5)"></g>
         <g id="minimapAdditionalHouses"></g>
+        <line id="minimapGoalLine" x1="0" y1="0" x2="0" y2="0" stroke="#3ecf6b" stroke-width="1" stroke-dasharray="1.6 1.4" opacity="0" />
+        <g class="minimap-goal" id="minimapGoal" opacity="0">
+          <circle r="3.4" fill="#3ecf6b" stroke="#0c3858" stroke-width=".8"/>
+          <path d="M-1.4-.6 L-.3-.6 L-.3-1.9 L.3-1.9 L.3-.6 L1.4-.6 L0 1.5 Z" fill="white"/>
+        </g>
       </g>
       <g class="minimap-player" id="minimapPlayer" transform="translate(75 112.5)" filter="url(#markerShadow)">
         <circle r="4.1" fill="#ffffff" stroke="#154c72" stroke-width="1"/>
