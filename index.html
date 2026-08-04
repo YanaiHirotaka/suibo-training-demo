@@ -22,6 +22,22 @@
     </ul>
   </aside>
 
+  <aside class="flood-panel" id="floodPanel" aria-label="現在の水位">
+    <header>現在の水位</header>
+    <div class="flood-body">
+      <div class="flood-gauge">
+        <div class="flood-gauge-fill" id="floodGaugeFill"></div>
+      </div>
+      <div class="flood-gauge-ticks">
+        <span>3.0</span><span>2.0</span><span>1.0</span><span>0.0</span>
+      </div>
+      <div class="flood-readout">
+        <span class="flood-value" id="floodValue">0.0</span><span class="flood-unit">m</span>
+      </div>
+    </div>
+    <p class="flood-forecast" id="floodForecast">水位は安定しています</p>
+  </aside>
+
   <div class="guidance-banner is-hidden" id="guidanceBanner">
     <span class="guidance-arrow" id="guidanceArrow">⬆</span>
     <span class="guidance-info">
@@ -69,6 +85,14 @@
     <button id="editToggle" type="button">編集モード</button>
     <div class="edit-tools is-hidden" id="editTools">
       <header class="edit-tools-title">編集ツール</header>
+
+      <fieldset class="edit-fieldset">
+        <legend>環境</legend>
+        <label class="edit-toggle-row">
+          <input type="checkbox" id="floodToggle" checked>
+          <span>水位上昇</span>
+        </label>
+      </fieldset>
 
       <fieldset class="edit-fieldset">
         <legend>対象</legend>

@@ -20,6 +20,7 @@ const rangeFloatToggleRow = document.querySelector('#rangeFloatToggleRow');
 const structureRow = document.querySelector('#structureRow');
 const structureStatus = document.querySelector('#structureStatus');
 const structureDeselectButton = document.querySelector('#structureDeselect');
+const floodToggle = document.querySelector('#floodToggle');
 const characterCards = document.querySelectorAll('.character-card');
 const minimapMap = document.querySelector('#minimapMap');
 const minimapContent = document.querySelector('#minimapContent');
@@ -38,6 +39,9 @@ const missionReachShelter = document.querySelector('#missionReachShelter');
 const guidanceBanner = document.querySelector('#guidanceBanner');
 const guidanceArrow = document.querySelector('#guidanceArrow');
 const guidanceDistance = document.querySelector('#guidanceDistance');
+const floodValue = document.querySelector('#floodValue');
+const floodGaugeFill = document.querySelector('#floodGaugeFill');
+const floodForecast = document.querySelector('#floodForecast');
 
 const mapConfig = Object.freeze({
   // 1 Three.js unit = 1 metre. Keep this value fixed so assets remain the same scale.
@@ -2305,6 +2309,59 @@ function updateMissionGuidance() {
 }
 // --------------------------------------------------------------------------
 
+// --- Rising flood water -----------------------------------------------------
+// Minimal first pass: a flat water plane that climbs steadily once the
+// player has started, submerging low ground (the plateau and anything on it
+// stays dry since it's well above the max level). No per-tile flood state
+// yet - "flooded" is just "is the ground here below the current water Y".
+const FLOOD_MAX_LEVEL_METERS = 3;
+const FLOOD_RISE_METERS_PER_SEC = FLOOD_MAX_LEVEL_METERS / 150; // ~2.5 min to max
+const FLOOD_SPEED_MULTIPLIER = 0.55;
+let floodWaterLevel = 0;
+// Toggled from the edit-mode "水位上昇" checkbox. Pauses/resumes the rise in
+// place (does not reset the level back to 0), so turning it back on picks up
+// right where it left off.
+let floodRisingEnabled = true;
+
+const floodPlaneGeometry = new THREE.PlaneGeometry(fieldWidth, fieldDepth);
+floodPlaneGeometry.rotateX(-Math.PI / 2);
+const floodPlane = new THREE.Mesh(
+  floodPlaneGeometry,
+  new THREE.MeshBasicMaterial({
+    color: 0x1f7fb8, transparent: true, opacity: 0.55,
+    depthWrite: false, side: THREE.DoubleSide
+  })
+);
+floodPlane.name = 'FloodWaterPlane';
+floodPlane.position.y = 0;
+floodPlane.visible = false;
+floodPlane.renderOrder = 4;
+scene.add(floodPlane);
+
+function isPositionFlooded(x, z) {
+  return floodWaterLevel > 0 && floodWaterLevel > getWalkableHeight(x, z) + 0.02;
+}
+
+function updateFloodLevel(dt) {
+  if (!characterChosen) return;
+  if (floodRisingEnabled && floodWaterLevel < FLOOD_MAX_LEVEL_METERS) {
+    floodWaterLevel = Math.min(FLOOD_MAX_LEVEL_METERS, floodWaterLevel + FLOOD_RISE_METERS_PER_SEC * dt);
+  }
+  floodPlane.position.y = floodWaterLevel;
+  floodPlane.visible = floodWaterLevel > 0.02;
+
+  floodValue.textContent = floodWaterLevel.toFixed(1);
+  floodGaugeFill.style.height = `${Math.min(100, (floodWaterLevel / FLOOD_MAX_LEVEL_METERS) * 100).toFixed(1)}%`;
+  floodForecast.textContent = !floodRisingEnabled
+    ? '上昇を一時停止中'
+    : floodWaterLevel >= FLOOD_MAX_LEVEL_METERS ? '最高水位に到達' : '上昇中';
+}
+
+floodToggle.addEventListener('change', () => {
+  floodRisingEnabled = floodToggle.checked;
+});
+// --------------------------------------------------------------------------
+
 function createBlockRamp() {
   const topCells = [];
   const fillCells = [];
@@ -3886,7 +3943,14 @@ function updatePlayer(dt) {
     const cameraForward = new THREE.Vector3(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw));
     const cameraRight = new THREE.Vector3(Math.cos(cameraYaw), 0, -Math.sin(cameraYaw));
     moveDirection.addScaledVector(cameraForward, forward).addScaledVector(cameraRight, side).normalize();
-    const speed = (keys.has('ShiftLeft') || keys.has('ShiftRight')) ? 5.3 : 3.25;
+    const baseSpeed = (keys.has('ShiftLeft') || keys.has('ShiftRight')) ? 5.3 : 3.25;
+    // Wading through flooded ground is slower - checked at the CURRENT
+    // position (not the one we're about to move to); the flood depth barely
+    // changes within a single frame, so this is close enough without needing
+    // a second ground-height lookup after the move.
+    const speed = isPositionFlooded(player.position.x, player.position.z)
+      ? baseSpeed * FLOOD_SPEED_MULTIPLIER
+      : baseSpeed;
     const moveAmount = speed * dt;
     const nextX = player.position.x + moveDirection.x * moveAmount;
     const nextZ = player.position.z + moveDirection.z * moveAmount;
@@ -4008,6 +4072,7 @@ function animate(now) {
   updateCamera(dt);
   updateMinimap();
   updateMissionGuidance();
+  updateFloodLevel(dt);
   updateRiver(now);
   renderer.render(scene, camera);
 
