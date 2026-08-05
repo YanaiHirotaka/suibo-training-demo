@@ -58,7 +58,10 @@
   </div>
 
   <aside class="minimap-panel" aria-label="フィールド全体ミニマップ">
-    <header>ミニマップ</header>
+    <header>
+      <span>ミニマップ</span>
+      <button type="button" id="hazardToggle" class="hazard-toggle">ハザード表示</button>
+    </header>
     <svg class="minimap-map" id="minimapMap" viewBox="0 0 105 120" preserveAspectRatio="xMidYMid meet" role="img" aria-label="105×120ブロックのフィールドと現在地">
       <defs>
         <filter id="markerShadow" x="-80%" y="-80%" width="260%" height="260%">
@@ -68,6 +71,7 @@
       <g id="minimapContent">
         <rect id="minimapFrame" x="1" y="1" width="103" height="118" rx="3" fill="#a6c98b"/>
         <rect id="minimapGround" x="2" y="2" width="101" height="116" rx="2" fill="#9fc783"/>
+        <g id="minimapHazard" opacity="0"></g>
         <g id="minimapGrid" opacity=".45"></g>
         <g id="minimapRoads"></g>
         <path id="minimapRiver" d="" fill="#1f91d1" opacity=".86"/>
@@ -85,6 +89,11 @@
       </g>
     </svg>
     <footer><span><i class="player-key"></i>現在地</span><span id="minimapSizeLabel">105 × 120 blocks</span></footer>
+    <div class="hazard-legend is-hidden" id="hazardLegend">
+      <span><i class="hazard-swatch hazard-swatch-severe"></i>深い浸水想定</span>
+      <span><i class="hazard-swatch hazard-swatch-moderate"></i>浸水想定</span>
+      <span><i class="hazard-swatch hazard-swatch-safe"></i>安全</span>
+    </div>
   </aside>
 
   <div class="start-guide" id="startGuide">

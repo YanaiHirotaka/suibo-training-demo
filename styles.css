@@ -51,6 +51,10 @@ body {
 }
 
 .minimap-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 9px 14px;
   background: linear-gradient(180deg, #164c70, #0c3858);
   border-bottom: 1px solid rgba(255,255,255,.25);
@@ -58,6 +62,50 @@ body {
   font-weight: 900;
   letter-spacing: .04em;
 }
+
+.hazard-toggle {
+  padding: 5px 9px;
+  color: #d9eff7;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.hazard-toggle:hover { background: rgba(255, 255, 255, 0.2); }
+
+.hazard-toggle.is-active {
+  color: white;
+  background: #b23b3b;
+  border-color: #ffb3b3;
+}
+
+.hazard-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 0 12px 9px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #c8e5ef;
+}
+
+.hazard-legend span { display: flex; align-items: center; gap: 4px; }
+
+.hazard-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.hazard-swatch-severe { background: #c0392b; }
+.hazard-swatch-moderate { background: #e0a63a; }
+.hazard-swatch-safe { background: #3ecf6b; }
 
 .minimap-map {
   display: block;

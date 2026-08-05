@@ -27,6 +27,9 @@ const minimapContent = document.querySelector('#minimapContent');
 const minimapFrame = document.querySelector('#minimapFrame');
 const minimapGround = document.querySelector('#minimapGround');
 const minimapGrid = document.querySelector('#minimapGrid');
+const minimapHazard = document.querySelector('#minimapHazard');
+const hazardToggle = document.querySelector('#hazardToggle');
+const hazardLegend = document.querySelector('#hazardLegend');
 const minimapRoads = document.querySelector('#minimapRoads');
 const minimapRiver = document.querySelector('#minimapRiver');
 const minimapHouse = document.querySelector('#minimapHouse');
@@ -4156,7 +4159,46 @@ function animate(now) {
   }
 }
 
+// --- Hazard map --------------------------------------------------------
+// A coarse (one cell = one grid square, same 15-block cells as the visible
+// minimap grid lines) flood-risk overlay, colored from the same terrain
+// height data the actual flood mechanic uses. Built once at startup - it
+// doesn't react to further in-game terrain edits, same limitation as the
+// rest of the minimap (roads/river/houses are also drawn once in
+// initMinimap()).
+const FLOOD_SEVERE_HEIGHT_BLOCKS = 5; // roughly the drowning-risk depth
+const FLOOD_SAFE_HEIGHT_BLOCKS = FLOOD_MAX_LEVEL_METERS / tileSize; // never fully floods
+
+function buildHazardOverlay() {
+  const cell = mapConfig.cellBlocks;
+  const rects = [];
+  for (let z = 0; z < tilesDeep; z += cell) {
+    for (let x = 0; x < tilesWide; x += cell) {
+      const sampleX = Math.min(Math.floor(x + cell / 2), tilesWide - 1);
+      const sampleZ = Math.min(Math.floor(z + cell / 2), tilesDeep - 1);
+      const height = getTerrainHeightBlocks(sampleX, sampleZ);
+      const color = height < FLOOD_SEVERE_HEIGHT_BLOCKS
+        ? '#c0392b'
+        : height < FLOOD_SAFE_HEIGHT_BLOCKS ? '#e0a63a' : '#3ecf6b';
+      const w = Math.min(cell, tilesWide - x);
+      const h = Math.min(cell, tilesDeep - z);
+      rects.push(`<rect x="${x}" y="${z}" width="${w}" height="${h}" fill="${color}" opacity=".82"/>`);
+    }
+  }
+  minimapHazard.innerHTML = rects.join('');
+}
+
+let hazardMapVisible = false;
+hazardToggle.addEventListener('click', () => {
+  hazardMapVisible = !hazardMapVisible;
+  hazardToggle.classList.toggle('is-active', hazardMapVisible);
+  hazardLegend.classList.toggle('is-hidden', !hazardMapVisible);
+  minimapHazard.setAttribute('opacity', hazardMapVisible ? '1' : '0');
+});
+// --------------------------------------------------------------------------
+
 initMinimap();
+buildHazardOverlay();
 updateCamera(1);
 requestAnimationFrame(animate);
 
