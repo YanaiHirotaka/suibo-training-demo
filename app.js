@@ -53,6 +53,11 @@ const dangerText = document.querySelector('#dangerText');
 const missionHelpNpc = document.querySelector('#missionHelpNpc');
 const npcToast = document.querySelector('#npcToast');
 const npcToastText = document.querySelector('#npcToastText');
+const trainingComplete = document.querySelector('#trainingComplete');
+const statElapsedTime = document.querySelector('#statElapsedTime');
+const statHealth = document.querySelector('#statHealth');
+const statRespawns = document.querySelector('#statRespawns');
+const trainingRetryButton = document.querySelector('#trainingRetry');
 
 const mapConfig = Object.freeze({
   // 1 Three.js unit = 1 metre. Keep this value fixed so assets remain the same scale.
@@ -2269,6 +2274,7 @@ function completeMissionReachShelter() {
   guidanceArrow.textContent = '✓';
   guidanceBanner.querySelector('strong').textContent = '避難所に到着しました！';
   guidanceDistance.textContent = 'ミッション達成';
+  checkTrainingComplete();
 }
 
 function updateMissionGuidance() {
@@ -2391,6 +2397,7 @@ const PLAYER_NOSE_HEIGHT_METERS = 1.06;
 const HEALTH_DRAIN_PER_SEC = 12;
 const PLAYER_MAX_HEALTH = 100;
 let playerHealth = PLAYER_MAX_HEALTH;
+let respawnCount = 0;
 
 function playerFloodDepth() {
   return floodWaterLevel - getWalkableHeight(player.position.x, player.position.z);
@@ -2411,6 +2418,7 @@ function respawnAtStart() {
   player.position.set(startX, getWalkableHeight(startX, startZ), startZ);
   verticalVelocity = 0;
   playerHealth = PLAYER_MAX_HEALTH;
+  respawnCount += 1;
   setDangerBanner(false);
 }
 
@@ -2827,6 +2835,7 @@ let player = makePlayer(currentCharacterType);
 player.position.set(startX, 0, startZ);
 scene.add(player);
 let characterChosen = false;
+let trainingStartTime = 0;
 
 // --- Helper NPC ("近くの人に声をかけて助け合おう") --------------------------
 // A stationary character along the route from the start house toward the
@@ -2873,6 +2882,7 @@ function updateNpcInteraction(dt) {
     missionHelpNpcDone = true;
     missionHelpNpc.classList.add('is-done');
     showNpcToast('近くの人を助けました！', 3000);
+    checkTrainingComplete();
     return;
   }
 
@@ -2905,6 +2915,33 @@ function updateNpcInteraction(dt) {
 }
 // --------------------------------------------------------------------------
 
+// --- Training completion summary --------------------------------------------
+// Both missions (help the NPC, reach the shelter) can finish in either
+// order, so each completion path calls this and it only fires once, when
+// the second one lands.
+let trainingCompleteShown = false;
+
+function formatElapsedTime(ms) {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function checkTrainingComplete() {
+  if (trainingCompleteShown || !missionHelpNpcDone || !missionReachShelterDone) return;
+  trainingCompleteShown = true;
+  statElapsedTime.textContent = formatElapsedTime(performance.now() - trainingStartTime);
+  statHealth.textContent = `${Math.ceil(playerHealth)}/${PLAYER_MAX_HEALTH}`;
+  statRespawns.textContent = `${respawnCount}回`;
+  trainingComplete.classList.remove('is-hidden');
+}
+
+trainingRetryButton.addEventListener('click', () => {
+  window.location.reload();
+});
+// --------------------------------------------------------------------------
+
 function disposeObject(object) {
   object.traverse((obj) => {
     if (obj.geometry) obj.geometry.dispose();
@@ -2923,6 +2960,7 @@ function selectCharacter(type) {
     scene.add(player);
     currentCharacterType = type;
   }
+  if (!characterChosen) trainingStartTime = performance.now();
   characterChosen = true;
   characterSelect.classList.add('is-hidden');
 }
