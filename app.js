@@ -42,6 +42,11 @@ const guidanceDistance = document.querySelector('#guidanceDistance');
 const floodValue = document.querySelector('#floodValue');
 const floodGaugeFill = document.querySelector('#floodGaugeFill');
 const floodForecast = document.querySelector('#floodForecast');
+const floodPanel = document.querySelector('#floodPanel');
+const healthBarFill = document.querySelector('#healthBarFill');
+const healthText = document.querySelector('#healthText');
+const dangerBanner = document.querySelector('#dangerBanner');
+const dangerText = document.querySelector('#dangerText');
 
 const mapConfig = Object.freeze({
   // 1 Three.js unit = 1 metre. Keep this value fixed so assets remain the same scale.
@@ -2362,6 +2367,71 @@ floodToggle.addEventListener('change', () => {
 });
 // --------------------------------------------------------------------------
 
+// --- Flood danger: deep water has consequences -----------------------------
+// Below WARNING_DEPTH, flood water is just the speed penalty from
+// isPositionFlooded(). Past WARNING_DEPTH it's a visible warning. Health only
+// drains once the water is actually over the player's nose - i.e. breathing
+// is blocked - not at some arbitrary depth. Running out of health sends the
+// player back to their starting point (a soft "mission fail" - no game over
+// screen, just a real cost for staying underwater too long).
+const FLOOD_WARNING_DEPTH_METERS = 1.0;
+// From the character model: headY = 1.11 (head centre, above the feet) and
+// the nose sits a further 0.05 below that within the head box (see the
+// 'nose' voxelBox in the character builder) - the nose (the higher of nose
+// and mouth) is ~1.06m above the feet. player.position.y is the feet height,
+// so this is added to it each frame - jumping raises the nose and can buy a
+// breath.
+const PLAYER_NOSE_HEIGHT_METERS = 1.06;
+const HEALTH_DRAIN_PER_SEC = 12;
+const PLAYER_MAX_HEALTH = 100;
+let playerHealth = PLAYER_MAX_HEALTH;
+
+function playerFloodDepth() {
+  return floodWaterLevel - getWalkableHeight(player.position.x, player.position.z);
+}
+
+function isPlayerDrowning() {
+  return floodWaterLevel > player.position.y + PLAYER_NOSE_HEIGHT_METERS;
+}
+
+function setDangerBanner(visible, text) {
+  dangerBanner.classList.toggle('is-hidden', !visible);
+  if (text) dangerText.textContent = text;
+}
+
+function respawnAtStart() {
+  const startX = worldXFromBlock(mapConfig.playerStartBlock.x);
+  const startZ = worldZFromBlock(mapConfig.playerStartBlock.z);
+  player.position.set(startX, getWalkableHeight(startX, startZ), startZ);
+  verticalVelocity = 0;
+  playerHealth = PLAYER_MAX_HEALTH;
+  setDangerBanner(false);
+}
+
+function updateFloodDanger(dt) {
+  if (!characterChosen) return;
+  const drowning = isPlayerDrowning();
+  const inWarning = !drowning && playerFloodDepth() > FLOOD_WARNING_DEPTH_METERS;
+
+  floodPanel.classList.toggle('is-danger', drowning);
+
+  if (drowning) {
+    playerHealth = Math.max(0, playerHealth - HEALTH_DRAIN_PER_SEC * dt);
+    setDangerBanner(true, '危険！水没して息ができません！');
+  } else if (inWarning) {
+    setDangerBanner(true, '危険な深さの水に入っています！');
+  } else {
+    setDangerBanner(false);
+  }
+
+  healthBarFill.style.width = `${(playerHealth / PLAYER_MAX_HEALTH) * 100}%`;
+  healthBarFill.classList.toggle('is-low', playerHealth < PLAYER_MAX_HEALTH * 0.3);
+  healthText.textContent = `${Math.ceil(playerHealth)}/${PLAYER_MAX_HEALTH}`;
+
+  if (playerHealth <= 0) respawnAtStart();
+}
+// --------------------------------------------------------------------------
+
 function createBlockRamp() {
   const topCells = [];
   const fillCells = [];
@@ -4073,6 +4143,7 @@ function animate(now) {
   updateMinimap();
   updateMissionGuidance();
   updateFloodLevel(dt);
+  updateFloodDanger(dt);
   updateRiver(now);
   renderer.render(scene, camera);
 

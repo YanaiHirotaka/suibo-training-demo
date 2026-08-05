@@ -12,6 +12,12 @@
 
   <div class="fps-counter" id="fpsCounter">-- FPS</div>
 
+  <div class="health-panel" id="healthPanel" aria-label="体力">
+    <span class="health-icon">❤</span>
+    <div class="health-bar"><div class="health-bar-fill" id="healthBarFill"></div></div>
+    <span class="health-text" id="healthText">100/100</span>
+  </div>
+
   <aside class="mission-panel" id="missionPanel" aria-label="ミッション">
     <header>ミッション</header>
     <ul class="mission-list" id="missionList">
@@ -44,6 +50,11 @@
       <strong>避難所へ向かおう</strong>
       <span id="guidanceDistance">-- m</span>
     </span>
+  </div>
+
+  <div class="danger-banner is-hidden" id="dangerBanner">
+    <span class="danger-icon">⚠</span>
+    <span id="dangerText">危険な深さの水に入っています！</span>
   </div>
 
   <aside class="minimap-panel" aria-label="フィールド全体ミニマップ">
