@@ -50,6 +50,9 @@ const healthBarFill = document.querySelector('#healthBarFill');
 const healthText = document.querySelector('#healthText');
 const dangerBanner = document.querySelector('#dangerBanner');
 const dangerText = document.querySelector('#dangerText');
+const missionHelpNpc = document.querySelector('#missionHelpNpc');
+const npcToast = document.querySelector('#npcToast');
+const npcToastText = document.querySelector('#npcToastText');
 
 const mapConfig = Object.freeze({
   // 1 Three.js unit = 1 metre. Keep this value fixed so assets remain the same scale.
@@ -2825,6 +2828,83 @@ player.position.set(startX, 0, startZ);
 scene.add(player);
 let characterChosen = false;
 
+// --- Helper NPC ("近くの人に声をかけて助け合おう") --------------------------
+// A stationary character along the route from the start house toward the
+// shelter. Reuses the player model builder (rescue-worker look) but is just
+// added to the scene directly - no controls, no walk animation, it just
+// stands there until the player walks up to it.
+const npcHelper = makePlayer('rescue');
+npcHelper.name = 'NpcHelper';
+const NPC_HELPER_BLOCK_X = 177;
+const NPC_HELPER_BLOCK_Z = 155;
+npcHelper.position.set(
+  worldXFromBlock(NPC_HELPER_BLOCK_X),
+  getTerrainHeightBlocks(NPC_HELPER_BLOCK_X, NPC_HELPER_BLOCK_Z) * tileSize,
+  worldZFromBlock(NPC_HELPER_BLOCK_Z)
+);
+npcHelper.rotation.y = Math.PI; // face back down the road, toward the start house
+scene.add(npcHelper);
+
+const NPC_HELP_RADIUS_METERS = 1.4;
+// Once helped, the NPC follows the player at a fixed speed (a bit slower
+// than the player's walk speed, so it trails naturally) and stops closing in
+// once it's within FOLLOW_DISTANCE - it doesn't try to match sprinting, so
+// running far ahead will leave it behind, same as it would in real life.
+const NPC_FOLLOW_SPEED = 2.9;
+const NPC_FOLLOW_DISTANCE_METERS = 1.3;
+let missionHelpNpcDone = false;
+let npcToastTimeoutId = null;
+let npcWalkTime = 0;
+
+function showNpcToast(text, durationMs) {
+  npcToastText.textContent = text;
+  npcToast.classList.remove('is-hidden');
+  if (npcToastTimeoutId) clearTimeout(npcToastTimeoutId);
+  npcToastTimeoutId = setTimeout(() => npcToast.classList.add('is-hidden'), durationMs);
+}
+
+function updateNpcInteraction(dt) {
+  if (!characterChosen) return;
+
+  if (!missionHelpNpcDone) {
+    const dx = npcHelper.position.x - player.position.x;
+    const dz = npcHelper.position.z - player.position.z;
+    if (Math.hypot(dx, dz) > NPC_HELP_RADIUS_METERS) return;
+    missionHelpNpcDone = true;
+    missionHelpNpc.classList.add('is-done');
+    showNpcToast('近くの人を助けました！', 3000);
+    return;
+  }
+
+  const dx = player.position.x - npcHelper.position.x;
+  const dz = player.position.z - npcHelper.position.z;
+  const distance = Math.hypot(dx, dz);
+  const moving = distance > NPC_FOLLOW_DISTANCE_METERS;
+
+  if (moving) {
+    const moveAmount = Math.min(NPC_FOLLOW_SPEED * dt, distance - NPC_FOLLOW_DISTANCE_METERS);
+    npcHelper.position.x += (dx / distance) * moveAmount;
+    npcHelper.position.z += (dz / distance) * moveAmount;
+    const targetAngle = Math.atan2(-dx, -dz);
+    const angleDelta = Math.atan2(
+      Math.sin(targetAngle - npcHelper.rotation.y),
+      Math.cos(targetAngle - npcHelper.rotation.y)
+    );
+    npcHelper.rotation.y += angleDelta * (1 - Math.exp(-14 * dt));
+    npcWalkTime += dt * 9;
+  }
+  npcHelper.position.y = getWalkableHeight(npcHelper.position.x, npcHelper.position.z);
+
+  const swing = moving ? Math.sin(npcWalkTime) * 0.72 : 0;
+  const parts = npcHelper.userData;
+  parts.leftArm.rotation.x = THREE.MathUtils.lerp(parts.leftArm.rotation.x, swing, 12 * dt);
+  parts.rightArm.rotation.x = THREE.MathUtils.lerp(parts.rightArm.rotation.x, -swing, 12 * dt);
+  parts.leftLeg.rotation.x = THREE.MathUtils.lerp(parts.leftLeg.rotation.x, -swing, 12 * dt);
+  parts.rightLeg.rotation.x = THREE.MathUtils.lerp(parts.rightLeg.rotation.x, swing, 12 * dt);
+  parts.visual.position.y = moving ? Math.abs(Math.sin(npcWalkTime * 2)) * 0.025 : 0;
+}
+// --------------------------------------------------------------------------
+
 function disposeObject(object) {
   object.traverse((obj) => {
     if (obj.geometry) obj.geometry.dispose();
@@ -4145,6 +4225,7 @@ function animate(now) {
   updateCamera(dt);
   updateMinimap();
   updateMissionGuidance();
+  updateNpcInteraction(dt);
   updateFloodLevel(dt);
   updateFloodDanger(dt);
   updateRiver(now);

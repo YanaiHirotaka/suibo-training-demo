@@ -21,12 +21,21 @@
   <aside class="mission-panel" id="missionPanel" aria-label="ミッション">
     <header>ミッション</header>
     <ul class="mission-list" id="missionList">
+      <li class="mission-item" id="missionHelpNpc">
+        <span class="mission-check">✓</span>
+        <span class="mission-text">近くの人に声をかけて助け合おう</span>
+      </li>
       <li class="mission-item" id="missionReachShelter">
         <span class="mission-check">✓</span>
         <span class="mission-text">避難所へ移動しよう</span>
       </li>
     </ul>
   </aside>
+
+  <div class="npc-toast is-hidden" id="npcToast">
+    <span class="npc-toast-icon">💚</span>
+    <span id="npcToastText">近くの人を助けました！</span>
+  </div>
 
   <aside class="flood-panel" id="floodPanel" aria-label="現在の水位">
     <header>現在の水位</header>
