@@ -38,7 +38,10 @@ const minimapPlayer = document.querySelector('#minimapPlayer');
 const minimapSizeLabel = document.querySelector('#minimapSizeLabel');
 const minimapGoal = document.querySelector('#minimapGoal');
 const minimapGoalLine = document.querySelector('#minimapGoalLine');
+const missionInspectHazard = document.querySelector('#missionInspectHazard');
+const missionReachCheckpoint = document.querySelector('#missionReachCheckpoint');
 const missionReachShelter = document.querySelector('#missionReachShelter');
+const missionProgress = document.querySelector('#missionProgress');
 const guidanceBanner = document.querySelector('#guidanceBanner');
 const guidanceArrow = document.querySelector('#guidanceArrow');
 const guidanceDistance = document.querySelector('#guidanceDistance');
@@ -50,7 +53,6 @@ const healthBarFill = document.querySelector('#healthBarFill');
 const healthText = document.querySelector('#healthText');
 const dangerBanner = document.querySelector('#dangerBanner');
 const dangerText = document.querySelector('#dangerText');
-const missionHelpNpc = document.querySelector('#missionHelpNpc');
 const npcToast = document.querySelector('#npcToast');
 const npcToastText = document.querySelector('#npcToastText');
 const trainingComplete = document.querySelector('#trainingComplete');
@@ -2253,7 +2255,53 @@ buildEvacuationShelter();
 // LIVE collider (not its static config) so this keeps working if the
 // shelter is ever moved again with the edit-mode "select and move" tool.
 const missionShelter = movableStructures.find((s) => s.group.name === 'EvacuationShelter');
+const CHECKPOINT_BLOCK = { x: 177, z: 170 };
+const checkpointPosition = new THREE.Vector3(
+  worldXFromBlock(CHECKPOINT_BLOCK.x),
+  getWalkableHeight(worldXFromBlock(CHECKPOINT_BLOCK.x), worldZFromBlock(CHECKPOINT_BLOCK.z)),
+  worldZFromBlock(CHECKPOINT_BLOCK.z)
+);
+const checkpointMarker = new THREE.Group();
+const checkpointGlow = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.95, 0.95, 0.035, 32),
+  new THREE.MeshBasicMaterial({ color: 0xffdf45, transparent: true, opacity: 0.88 })
+);
+const checkpointBeacon = new THREE.Mesh(
+  new THREE.ConeGeometry(0.34, 1.15, 4),
+  new THREE.MeshBasicMaterial({ color: 0xffe765 })
+);
+checkpointGlow.position.y = 0.035;
+checkpointBeacon.position.y = 0.64;
+checkpointMarker.add(checkpointGlow, checkpointBeacon);
+checkpointMarker.position.copy(checkpointPosition);
+checkpointMarker.name = 'SafeRouteCheckpoint';
+scene.add(checkpointMarker);
+
+let missionHazardChecked = false;
+let missionCheckpointDone = false;
 let missionReachShelterDone = false;
+
+function updateMissionProgress() {
+  const complete = Number(missionHazardChecked) + Number(missionCheckpointDone) + Number(missionReachShelterDone);
+  missionProgress.textContent = `${complete}/3`;
+}
+
+function completeHazardMission() {
+  if (missionHazardChecked || !characterChosen) return;
+  missionHazardChecked = true;
+  missionInspectHazard.classList.add('is-done');
+  showNpcToast('ハザードマップを確認しました。安全ルートを進みましょう。', 3600);
+  updateMissionProgress();
+}
+
+function completeCheckpointMission() {
+  if (missionCheckpointDone) return;
+  missionCheckpointDone = true;
+  missionReachCheckpoint.classList.add('is-done');
+  checkpointMarker.visible = false;
+  showNpcToast('チェックポイントを通過しました。近くの人を助けましょう。', 3600);
+  updateMissionProgress();
+}
 
 function shelterWorldCenter() {
   const c = missionShelter.collider;
@@ -2268,12 +2316,13 @@ function shelterArrivalRadius() {
 }
 
 function completeMissionReachShelter() {
-  if (missionReachShelterDone) return;
+  if (missionReachShelterDone || !missionHazardChecked || !missionCheckpointDone || !missionHelpNpcDone) return;
   missionReachShelterDone = true;
   missionReachShelter.classList.add('is-done');
   guidanceArrow.textContent = '✓';
   guidanceBanner.querySelector('strong').textContent = '避難所に到着しました！';
   guidanceDistance.textContent = 'ミッション達成';
+  updateMissionProgress();
   checkTrainingComplete();
 }
 
@@ -2286,20 +2335,40 @@ function updateMissionGuidance() {
     return;
   }
 
-  const goal = shelterWorldCenter();
+  const goal = !missionHazardChecked ? null
+    : !missionCheckpointDone ? checkpointPosition
+      : !missionHelpNpcDone ? npcHelper.position : shelterWorldCenter();
+  if (!goal) {
+    guidanceBanner.classList.remove('is-hidden');
+    guidanceArrow.textContent = 'H';
+    guidanceArrow.style.transform = 'none';
+    guidanceBanner.querySelector('strong').textContent = 'ハザードマップを確認しよう';
+    guidanceDistance.textContent = '右上の「ハザード表示」を押してください';
+    minimapGoal.setAttribute('opacity', '0');
+    minimapGoalLine.setAttribute('opacity', '0');
+    return;
+  }
   const dx = goal.x - player.position.x;
   const dz = goal.z - player.position.z;
   const distance = Math.hypot(dx, dz);
 
-  if (!missionReachShelterDone && distance < shelterArrivalRadius()) {
+  if (missionHazardChecked && !missionCheckpointDone && distance < 2.2) {
+    completeCheckpointMission();
+  }
+  if (!missionReachShelterDone && missionHazardChecked && missionCheckpointDone && missionHelpNpcDone && distance < shelterArrivalRadius()) {
     completeMissionReachShelter();
   }
 
   guidanceBanner.classList.remove('is-hidden');
   if (!missionReachShelterDone) {
+    guidanceArrow.textContent = '⬆';
     // 1 Three.js unit = 1 metre (see mapConfig), so distance is already in
     // metres - no unit conversion needed, just round for display.
     guidanceDistance.textContent = `${Math.round(distance)}m`;
+    guidanceBanner.querySelector('strong').textContent = !missionCheckpointDone
+      ? '安全ルートのチェックポイントへ向かおう'
+      : !missionHelpNpcDone ? '近くの人に声をかけよう'
+        : '避難所へ向かおう';
     // Arrow is screen-relative, not world-relative: 0deg (pointing up) means
     // "the shelter is directly ahead of the camera view". Project the
     // world-space direction to the goal onto the camera's forward/right
@@ -2879,10 +2948,12 @@ function updateNpcInteraction(dt) {
     const dx = npcHelper.position.x - player.position.x;
     const dz = npcHelper.position.z - player.position.z;
     if (Math.hypot(dx, dz) > NPC_HELP_RADIUS_METERS) return;
+    if (!missionHazardChecked || !missionCheckpointDone) {
+      showNpcToast('先にハザードマップを確認し、安全ルートのチェックポイントへ向かいましょう。', 3200);
+      return;
+    }
     missionHelpNpcDone = true;
-    missionHelpNpc.classList.add('is-done');
-    showNpcToast('近くの人を助けました！', 3000);
-    checkTrainingComplete();
+    showNpcToast('近くの人を助けました！ 一緒に避難所へ向かいましょう。', 3000);
     return;
   }
 
@@ -2929,7 +3000,7 @@ function formatElapsedTime(ms) {
 }
 
 function checkTrainingComplete() {
-  if (trainingCompleteShown || !missionHelpNpcDone || !missionReachShelterDone) return;
+  if (trainingCompleteShown || !missionHazardChecked || !missionCheckpointDone || !missionHelpNpcDone || !missionReachShelterDone) return;
   trainingCompleteShown = true;
   statElapsedTime.textContent = formatElapsedTime(performance.now() - trainingStartTime);
   statHealth.textContent = `${Math.ceil(playerHealth)}/${PLAYER_MAX_HEALTH}`;
@@ -4313,6 +4384,7 @@ hazardToggle.addEventListener('click', () => {
   hazardToggle.classList.toggle('is-active', hazardMapVisible);
   hazardLegend.classList.toggle('is-hidden', !hazardMapVisible);
   minimapHazard.setAttribute('opacity', hazardMapVisible ? '1' : '0');
+  if (hazardMapVisible) completeHazardMission();
 });
 // --------------------------------------------------------------------------
 
