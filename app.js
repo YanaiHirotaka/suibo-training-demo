@@ -64,6 +64,7 @@ const minimapRiver = document.querySelector('#minimapRiver');
 const minimapHouse = document.querySelector('#minimapHouse');
 const minimapAdditionalHouses = document.querySelector('#minimapAdditionalHouses');
 const minimapNpcMarkers = document.querySelector('#minimapNpcMarkers');
+const minimapRoadClosure = document.querySelector('#minimapRoadClosure');
 const minimapPlayer = document.querySelector('#minimapPlayer');
 const minimapSizeLabel = document.querySelector('#minimapSizeLabel');
 const minimapGoal = document.querySelector('#minimapGoal');
@@ -2687,6 +2688,102 @@ let safeRouteGoalKey = '';
 let safeRouteLastStart = new THREE.Vector2(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY);
 let safeRouteRecalculateTimer = 0;
 
+// The low road between the elderly person and the child closes at alert
+// level 3. The blocked footprint spans the full 15-block road plus a small
+// shoulder, forcing the route search to use the higher ground on either side.
+const ROAD_CLOSURE_BOUNDS = Object.freeze({ minBlockX: 169, maxBlockX: 187, minBlockZ: 146, maxBlockZ: 151 });
+let roadClosureActive = false;
+const roadClosureGroup = new THREE.Group();
+roadClosureGroup.name = 'LowRoadClosure';
+roadClosureGroup.visible = false;
+scene.add(roadClosureGroup);
+
+function buildRoadClosureBarricade() {
+  const centerBlockX = (ROAD_CLOSURE_BOUNDS.minBlockX + ROAD_CLOSURE_BOUNDS.maxBlockX) / 2;
+  const centerBlockZ = (ROAD_CLOSURE_BOUNDS.minBlockZ + ROAD_CLOSURE_BOUNDS.maxBlockZ) / 2;
+  const centerX = worldXFromBlock(centerBlockX);
+  const centerZ = worldZFromBlock(centerBlockZ);
+  const groundY = getWalkableHeight(centerX, centerZ);
+  const width = (ROAD_CLOSURE_BOUNDS.maxBlockX - ROAD_CLOSURE_BOUNDS.minBlockX) * tileSize;
+  const beamMaterialOrange = new THREE.MeshStandardMaterial({ color: 0xe85d24, roughness: 0.72 });
+  const beamMaterialWhite = new THREE.MeshStandardMaterial({ color: 0xf6f1df, roughness: 0.72 });
+  const darkMaterial = new THREE.MeshStandardMaterial({ color: 0x4b4038, roughness: 0.82 });
+  const stripeCount = 9;
+  const stripeWidth = width / stripeCount;
+
+  for (const zOffset of [-0.32, 0.32]) {
+    for (let index = 0; index < stripeCount; index++) {
+      const beam = new THREE.Mesh(
+        new THREE.BoxGeometry(stripeWidth * 0.97, 0.24, 0.12),
+        index % 2 ? beamMaterialWhite : beamMaterialOrange
+      );
+      beam.position.set(centerX - width / 2 + stripeWidth * (index + 0.5), groundY + 0.72, centerZ + zOffset);
+      beam.castShadow = true;
+      roadClosureGroup.add(beam);
+    }
+    for (const side of [-1, 1]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.85, 0.12), darkMaterial);
+      leg.position.set(centerX + side * (width / 2 - 0.12), groundY + 0.4, centerZ + zOffset);
+      leg.castShadow = true;
+      roadClosureGroup.add(leg);
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.3), darkMaterial);
+      foot.position.set(leg.position.x, groundY + 0.05, centerZ + zOffset);
+      roadClosureGroup.add(foot);
+    }
+  }
+
+  const signTexture = createSignTexture((ctx, widthPx, heightPx) => {
+    ctx.fillStyle = '#b72f26';
+    ctx.fillRect(0, 0, widthPx, heightPx);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 10;
+    ctx.strokeRect(7, 7, widthPx - 14, heightPx - 14);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 54px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('冠水・通行止め', widthPx / 2, heightPx / 2);
+  }, 512, 128);
+  const sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: signTexture, transparent: true, depthTest: false }));
+  sign.position.set(centerX, groundY + 1.55, centerZ);
+  sign.scale.set(3.4, 0.85, 1);
+  sign.renderOrder = 18;
+  roadClosureGroup.add(sign);
+}
+
+buildRoadClosureBarricade();
+
+function isInsideRoadClosure(x, z) {
+  if (!roadClosureActive) return false;
+  const blockX = blockXFromWorld(x);
+  const blockZ = blockZFromWorld(z);
+  return blockX >= ROAD_CLOSURE_BOUNDS.minBlockX
+    && blockX <= ROAD_CLOSURE_BOUNDS.maxBlockX
+    && blockZ >= ROAD_CLOSURE_BOUNDS.minBlockZ
+    && blockZ <= ROAD_CLOSURE_BOUNDS.maxBlockZ;
+}
+
+function activateRoadClosure() {
+  if (roadClosureActive) return;
+  roadClosureActive = true;
+  roadClosureGroup.visible = true;
+  minimapRoadClosure.setAttribute('opacity', '1');
+  safeRouteGoalKey = '';
+  safeRouteRecalculateTimer = 0;
+  playToneSequence([
+    { frequency: 620, duration: 0.12, volume: 0.16 },
+    { frequency: 460, duration: 0.18, volume: 0.18 },
+    { frequency: 620, duration: 0.24, volume: 0.17 }
+  ]);
+  showNpcToast('低地道路が冠水し、通行止めになりました。', 4200);
+  showTrainingAdvice(
+    'low-road-closed',
+    '低地道路が通行止めです',
+    'バリケードを越えず、更新された緑の矢印を確認して高い場所へ迂回してください。',
+    'warning', 9000, 0
+  );
+}
+
 function currentMissionGoal() {
   if (!missionHazardChecked || missionReachShelterDone) return null;
   if (!missionCheckpointDone) return checkpointPosition;
@@ -3236,6 +3333,7 @@ function updateEvacuationAlert() {
       severity, 7500, 0
     );
   }
+  if (alert.level >= 3) activateRoadClosure();
 }
 
 function scenarioRainBaseIntensity() {
@@ -4039,8 +4137,18 @@ function updateNpcInteraction(dt) {
 
     if (moving) {
       const moveAmount = Math.min(npc.followSpeed * dt, distance - followDistance);
-      npc.group.position.x += (dx / distance) * moveAmount;
-      npc.group.position.z += (dz / distance) * moveAmount;
+      const nextX = npc.group.position.x + (dx / distance) * moveAmount;
+      const nextZ = npc.group.position.z + (dz / distance) * moveAmount;
+      if (!isInsideRoadClosure(nextX, nextZ)) {
+        npc.group.position.x = nextX;
+        npc.group.position.z = nextZ;
+      } else {
+        // Follow the player's sideways detour instead of cutting through the
+        // closed road. Trying each axis separately provides simple local
+        // steering while preserving the existing lightweight follow system.
+        if (!isInsideRoadClosure(nextX, npc.group.position.z)) npc.group.position.x = nextX;
+        if (!isInsideRoadClosure(npc.group.position.x, nextZ)) npc.group.position.z = nextZ;
+      }
       const targetAngle = Math.atan2(-dx, -dz);
       const angleDelta = Math.atan2(
         Math.sin(targetAngle - npc.group.rotation.y),
@@ -5719,7 +5827,10 @@ function isInsideRiverFence(x, z) {
 }
 
 function isBlockedPosition(x, z) {
-  return isInsideHouse(x, z) || isInsideRiverBarrier(x, z) || isInsideRiverFence(x, z);
+  return isInsideHouse(x, z)
+    || isInsideRiverBarrier(x, z)
+    || isInsideRiverFence(x, z)
+    || isInsideRoadClosure(x, z);
 }
 
 function getRampHeightAt(x, z) {
