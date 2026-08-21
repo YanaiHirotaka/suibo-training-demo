@@ -164,10 +164,13 @@
     </div>
   </div>
 
-  <aside class="minimap-panel" aria-label="フィールド全体ミニマップ">
+  <aside class="minimap-panel" id="minimapPanel" aria-label="フィールド全体ミニマップ">
     <header>
       <span>ミニマップ</span>
-      <button type="button" id="hazardToggle" class="hazard-toggle">ハザード表示</button>
+      <span class="minimap-controls">
+        <button type="button" id="mapExpandToggle" class="map-expand-toggle" aria-expanded="false">地図拡大 <kbd>M</kbd></button>
+        <button type="button" id="hazardToggle" class="hazard-toggle">ハザード表示</button>
+      </span>
     </header>
     <svg class="minimap-map" id="minimapMap" viewBox="0 0 105 120" preserveAspectRatio="xMidYMid meet" role="img" aria-label="105×120ブロックのフィールドと現在地">
       <defs>

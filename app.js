@@ -35,6 +35,8 @@ const pauseResume = document.querySelector('#pauseResume');
 const soundToggle = document.querySelector('#soundToggle');
 const checkpointDecision = document.querySelector('#checkpointDecision');
 const checkpointDecisionFeedback = document.querySelector('#checkpointDecisionFeedback');
+const minimapPanel = document.querySelector('#minimapPanel');
+const mapExpandToggle = document.querySelector('#mapExpandToggle');
 const minimapMap = document.querySelector('#minimapMap');
 const minimapContent = document.querySelector('#minimapContent');
 const minimapFrame = document.querySelector('#minimapFrame');
@@ -178,6 +180,7 @@ let checkpointDecisionOpen = false;
 let checkpointDecisionResolved = false;
 let checkpointDecisionMistakes = 0;
 let currentEvacuationLevel = 0;
+let mapExpanded = false;
 let audioEnabled = true;
 let audioContext = null;
 let masterAudioGain = null;
@@ -4303,6 +4306,11 @@ addEventListener('keydown', (event) => {
     if (event.code === 'Escape') event.preventDefault();
     return;
   }
+  if (mapExpanded && event.code === 'Escape') {
+    event.preventDefault();
+    setMapExpanded(false);
+    return;
+  }
   // Esc backs out one level at a time: first an in-progress range selection,
   // then a selected building, and finally edit mode itself. Checked ahead of
   // the characterChosen guard so it still works if edit mode was opened from
@@ -4312,6 +4320,12 @@ addEventListener('keydown', (event) => {
     if (rangeStage !== 0) resetRangeSelection();
     else if (selectedStructure) deselectStructure();
     else setEditMode(false);
+    return;
+  }
+
+  if (event.code === 'KeyM' && !gamePaused && !trainingCompleteShown) {
+    event.preventDefault();
+    setMapExpanded(!mapExpanded);
     return;
   }
 
@@ -5643,12 +5657,26 @@ function buildHazardOverlay() {
 }
 
 let hazardMapVisible = false;
-hazardToggle.addEventListener('click', () => {
-  hazardMapVisible = !hazardMapVisible;
+function setHazardMapVisible(visible) {
+  hazardMapVisible = visible;
   hazardToggle.classList.toggle('is-active', hazardMapVisible);
+  hazardToggle.textContent = hazardMapVisible ? 'ハザード非表示' : 'ハザード表示';
   hazardLegend.classList.toggle('is-hidden', !hazardMapVisible);
   minimapHazard.setAttribute('opacity', hazardMapVisible ? '1' : '0');
   if (hazardMapVisible) completeHazardMission();
+}
+
+function setMapExpanded(expanded) {
+  mapExpanded = expanded;
+  minimapPanel.classList.toggle('is-expanded', expanded);
+  mapExpandToggle.setAttribute('aria-expanded', String(expanded));
+  mapExpandToggle.innerHTML = expanded ? '地図を閉じる <kbd>M</kbd>' : '地図拡大 <kbd>M</kbd>';
+  if (expanded) setHazardMapVisible(true);
+}
+
+mapExpandToggle.addEventListener('click', () => setMapExpanded(!mapExpanded));
+hazardToggle.addEventListener('click', () => {
+  setHazardMapVisible(!hazardMapVisible);
 });
 // --------------------------------------------------------------------------
 

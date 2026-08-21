@@ -63,6 +63,39 @@ body {
   letter-spacing: .04em;
 }
 
+.minimap-controls { display: flex; align-items: center; gap: 5px; }
+
+.map-expand-toggle {
+  padding: 5px 8px;
+  color: #d9eff7;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.map-expand-toggle:hover { background: rgba(255, 255, 255, 0.2); }
+.map-expand-toggle kbd { margin-left: 3px; color: #ffe36b; font: 900 8px/1 monospace; }
+
+.minimap-panel.is-expanded {
+  top: 50%;
+  right: auto;
+  left: 50%;
+  z-index: 7;
+  width: min(78vw, 760px);
+  max-height: 94vh;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 100vmax rgba(5, 19, 30, 0.72), 0 22px 60px rgba(0, 0, 0, 0.5);
+}
+
+.minimap-panel.is-expanded .minimap-map { height: min(68vh, 620px); }
+.minimap-panel.is-expanded footer { display: flex; font-size: 12px; }
+.minimap-panel.is-expanded .hazard-legend { padding: 2px 14px 12px; font-size: 11px; }
+
 .hazard-toggle {
   padding: 5px 9px;
   color: #d9eff7;
@@ -837,6 +870,10 @@ body {
   .minimap-panel header { padding: 7px 10px; font-size: 13px; }
   .minimap-map { height: 160px; }
   .minimap-panel footer { display: none; }
+  .map-expand-toggle { padding: 5px 6px; font-size: 0; }
+  .map-expand-toggle kbd { margin: 0; font-size: 9px; }
+  .minimap-panel.is-expanded { width: min(94vw, 620px); }
+  .minimap-panel.is-expanded .minimap-map { height: 68vh; }
   .inventory-bar { left: 50%; bottom: 104px; padding: 5px 7px; }
   .inventory-slot { width: 42px; height: 42px; }
   .inventory-slot-icon { font-size: 19px; }
