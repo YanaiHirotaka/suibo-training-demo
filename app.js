@@ -64,6 +64,10 @@ const trainingTimeState = document.querySelector('#trainingTimeState');
 const rescuedPeopleCount = document.querySelector('#rescuedPeopleCount');
 const dangerBanner = document.querySelector('#dangerBanner');
 const dangerText = document.querySelector('#dangerText');
+const trainingAdvice = document.querySelector('#trainingAdvice');
+const trainingAdviceTitle = document.querySelector('#trainingAdviceTitle');
+const trainingAdviceText = document.querySelector('#trainingAdviceText');
+const trainingAdviceTimer = document.querySelector('.training-advice-timer');
 const npcToast = document.querySelector('#npcToast');
 const npcToastText = document.querySelector('#npcToastText');
 const trainingComplete = document.querySelector('#trainingComplete');
@@ -2635,6 +2639,7 @@ function completeHazardMission() {
   missionHazardChecked = true;
   missionInspectHazard.classList.add('is-done');
   showNpcToast('ハザードマップを確認しました。安全ルートを進みましょう。', 3600);
+  showTrainingAdvice('hazard-read', 'ハザードマップの見方', '赤は深い浸水、黄色は浸水想定、緑は比較的安全な場所です。緑のルートを選びましょう。', 'info', 7000, 0);
   updateMissionProgress();
 }
 
@@ -2644,6 +2649,7 @@ function completeCheckpointMission() {
   missionReachCheckpoint.classList.add('is-done');
   checkpointMarker.visible = false;
   showNpcToast('チェックポイントを通過しました。近くの人を助けましょう。', 3600);
+  showTrainingAdvice('checkpoint', '周囲の人にも声かけを', '自分だけで避難せず、近くに支援が必要な人がいないか確認しましょう。', 'info', 6500, 0);
   updateMissionProgress();
 }
 
@@ -3300,12 +3306,32 @@ const NPC_FOLLOW_DISTANCE_METERS = 1.3;
 let missionHelpNpcDone = false;
 let npcToastTimeoutId = null;
 let npcWalkTime = 0;
+let trainingAdviceTimeoutId = null;
+let trainingCoachTimer = 0;
+const trainingAdviceLastShown = new Map();
 
 function showNpcToast(text, durationMs) {
   npcToastText.textContent = text;
   npcToast.classList.remove('is-hidden');
   if (npcToastTimeoutId) clearTimeout(npcToastTimeoutId);
   npcToastTimeoutId = setTimeout(() => npcToast.classList.add('is-hidden'), durationMs);
+}
+
+function showTrainingAdvice(key, title, text, severity = 'info', durationMs = 6000, cooldownMs = 30000) {
+  const now = performance.now();
+  const lastShown = trainingAdviceLastShown.get(key) || Number.NEGATIVE_INFINITY;
+  if (now - lastShown < cooldownMs) return false;
+  trainingAdviceLastShown.set(key, now);
+  trainingAdviceTitle.textContent = title;
+  trainingAdviceText.textContent = text;
+  trainingAdvice.classList.remove('is-hidden', 'is-warning', 'is-danger');
+  if (severity !== 'info') trainingAdvice.classList.add(`is-${severity}`);
+  trainingAdviceTimer.style.animation = 'none';
+  void trainingAdviceTimer.offsetWidth;
+  trainingAdviceTimer.style.animation = `adviceTimer ${durationMs}ms linear forwards`;
+  if (trainingAdviceTimeoutId) clearTimeout(trainingAdviceTimeoutId);
+  trainingAdviceTimeoutId = setTimeout(() => trainingAdvice.classList.add('is-hidden'), durationMs);
+  return true;
 }
 
 function setInteractionPrompt(visible, text = '声をかける') {
@@ -3330,6 +3356,7 @@ function tryHelpNpc() {
   missionHelpNpc.classList.add('is-done');
   setInteractionPrompt(false);
   showNpcToast('声をかけて安全を確認しました。一緒に避難所へ向かいましょう。', 3200);
+  showTrainingAdvice('helped-person', '一緒に避難するとき', '相手の歩く速さに合わせ、離れすぎないように避難所まで誘導しましょう。', 'info', 6500, 0);
   updateMissionProgress();
 }
 
@@ -3393,6 +3420,35 @@ function updateTrainingMetrics(dt) {
   routeSampleTimer = 0.5;
   routeSampleCount += 1;
   if (distanceToSafeRoute(player.position.x, player.position.z) <= 1.35) safeRouteSampleCount += 1;
+}
+
+function updateTrainingCoach(dt) {
+  if (!characterChosen || trainingCompleteShown) return;
+  trainingCoachTimer -= dt;
+  if (trainingCoachTimer > 0) return;
+  trainingCoachTimer = 0.75;
+
+  const floodDepth = playerFloodDepth();
+  const remainingSeconds = Math.max(0, (trainingDeadlineTime - performance.now()) / 1000);
+  if (isPlayerDrowning()) {
+    showTrainingAdvice('drowning', 'すぐに高い場所へ', '水が顔の高さに達すると呼吸できません。来た道へ戻るか、近くの高い場所へ移動してください。', 'danger', 7000, 15000);
+    return;
+  }
+  if (floodDepth > FLOOD_WARNING_DEPTH_METERS) {
+    showTrainingAdvice('deep-water', '水深1mは危険です', '流れがなくても歩行が難しくなります。引き返して、浸水の浅い安全ルートを選びましょう。', 'danger', 7000, 18000);
+    return;
+  }
+  if (floodDepth > 0.45) {
+    showTrainingAdvice('flood-entry', '低い場所から浸水します', '水が浅く見えても、今後さらに上昇します。道路の高さと水位計を確認しましょう。', 'warning', 6500, 25000);
+    return;
+  }
+  if (missionHazardChecked && safeRoutePoints.length > 1 && distanceToSafeRoute(player.position.x, player.position.z) > 2.4) {
+    showTrainingAdvice('route-deviation', '安全ルートから離れています', '緑の3D矢印とミニマップを確認し、浸水リスクの低い経路へ戻りましょう。', 'warning', 6500, 18000);
+    return;
+  }
+  if (remainingSeconds <= 60) {
+    showTrainingAdvice('time-warning', '避難猶予が残り1分未満です', '走れる安全な場所ではShiftキーを使い、寄り道せず現在の目標へ向かいましょう。', 'warning', 6500, 30000);
+  }
 }
 
 function trainingResult() {
@@ -3483,6 +3539,7 @@ function selectCharacter(type) {
   }
   characterChosen = true;
   characterSelect.classList.add('is-hidden');
+  showTrainingAdvice('training-start', '最初にハザードを確認', '右上の「ハザード表示」を押し、浸水想定と安全な方向を確認してから移動しましょう。', 'info', 7000, 0);
 }
 
 characterCards.forEach((card) => {
@@ -4787,6 +4844,7 @@ function animate(now) {
   applyPaintIfDirty();
   updatePlayer(dt);
   updateTrainingMetrics(dt);
+  updateTrainingCoach(dt);
   updateCamera(dt);
   updateMinimap();
   updateSafeRoute(dt);
