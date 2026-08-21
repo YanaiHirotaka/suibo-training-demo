@@ -37,6 +37,11 @@ body {
   pointer-events: none;
 }
 
+.fps-counter.is-optimized {
+  color: #ffe38a;
+  border-color: rgba(255, 227, 138, 0.65);
+}
+
 .minimap-panel {
   position: fixed;
   top: 18px;

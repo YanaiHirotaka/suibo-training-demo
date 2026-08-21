@@ -433,8 +433,10 @@ const clearFogColor = new THREE.Color(0xbce5f5);
 const stormFogColor = new THREE.Color(0x7f9baa);
 
 const camera = new THREE.PerspectiveCamera(54, innerWidth / innerHeight, 0.05, 220);
+const mobileRenderProfile = matchMedia('(hover: none) and (pointer: coarse)').matches;
+const initialPixelRatioLimit = mobileRenderProfile ? 1.25 : 1.75;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.setPixelRatio(Math.min(devicePixelRatio, initialPixelRatioLimit));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -466,6 +468,7 @@ const flashlightDirection = new THREE.Vector3();
 // Rain uses line segments instead of point sprites so each drop reads as a
 // short streak while keeping the geometry inexpensive enough for mobile.
 const RAIN_DROP_COUNT = 680;
+let rainQualityScale = mobileRenderProfile ? 0.8 : 1;
 const rainPositions = new Float32Array(RAIN_DROP_COUNT * 2 * 3);
 const rainDropData = Array.from({ length: RAIN_DROP_COUNT }, () => ({
   x: (Math.random() - 0.5) * 42,
@@ -3207,7 +3210,7 @@ function updateWeather(dt) {
     1 - Math.exp(-1.3 * dt)
   );
 
-  const visibleDrops = Math.floor(RAIN_DROP_COUNT * weatherIntensity);
+  const visibleDrops = Math.floor(RAIN_DROP_COUNT * weatherIntensity * rainQualityScale);
   rainGeometry.setDrawRange(0, visibleDrops * 2);
   rainMaterial.opacity = 0.3 + weatherIntensity * 0.32;
   for (let index = 0; index < visibleDrops; index++) {
@@ -5753,6 +5756,18 @@ function updateRiver(now) {
 
 let fpsFrames = 0;
 let fpsElapsed = 0;
+let lowFpsWindows = 0;
+let mobileQualityReduced = false;
+
+function reduceMobileRenderLoad() {
+  if (!mobileRenderProfile || mobileQualityReduced) return;
+  mobileQualityReduced = true;
+  rainQualityScale = 0.5;
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 0.9));
+  renderer.setSize(innerWidth, innerHeight, false);
+  fpsCounter.title = '描画負荷を自動調整中';
+  fpsCounter.classList.add('is-optimized');
+}
 
 function animate(now) {
   requestAnimationFrame(animate);
@@ -5784,7 +5799,12 @@ function animate(now) {
   fpsFrames += 1;
   fpsElapsed += dt;
   if (fpsElapsed >= 0.5) {
-    fpsCounter.textContent = `${Math.round(fpsFrames / fpsElapsed)} FPS`;
+    const currentFps = Math.round(fpsFrames / fpsElapsed);
+    fpsCounter.textContent = `${currentFps} FPS`;
+    if (mobileRenderProfile && characterChosen && !gamePaused) {
+      lowFpsWindows = currentFps < 42 ? lowFpsWindows + 1 : 0;
+      if (lowFpsWindows >= 4) reduceMobileRenderLoad();
+    }
     fpsFrames = 0;
     fpsElapsed = 0;
   }
