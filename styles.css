@@ -999,6 +999,107 @@ body {
 
   .touch-actions .touch-jump { width: 68px; height: 68px; }
   .start-guide { display: none; }
+  body .edit-panel { display: none; }
+}
+
+@media (max-width: 700px) and (orientation: portrait) {
+  .fps-counter { top: 8px; left: 8px; }
+  .health-panel { top: 40px; left: 8px; }
+
+  .mission-panel {
+    top: 76px;
+    left: 8px;
+    width: 174px;
+  }
+
+  .mission-list { padding: 8px 10px; gap: 6px; }
+  .mission-item { font-size: 10px; }
+
+  .minimap-panel {
+    top: 8px;
+    right: 8px;
+    width: 174px;
+  }
+
+  .minimap-panel header { gap: 4px; padding: 6px 8px; }
+  .minimap-panel header > span:first-child { font-size: 0; }
+  .minimap-panel header > span:first-child::after { content: '地図'; font-size: 12px; }
+  .minimap-controls { gap: 3px; }
+  .hazard-toggle { padding: 5px 6px; font-size: 8px; }
+  .minimap-map { height: 138px; }
+  .hazard-legend { gap: 3px 8px; padding: 0 8px 7px; font-size: 7px; }
+
+  .training-status-panel {
+    top: 206px;
+    right: 8px;
+    width: 174px;
+  }
+
+  .evacuation-alert {
+    top: 258px;
+    right: 8px;
+    width: 174px;
+  }
+
+  .evacuation-alert-level { width: 56px; padding: 7px 5px; font-size: 8px; }
+  .evacuation-alert-copy { padding: 6px; }
+  .evacuation-alert-copy strong { font-size: 9px; }
+  .evacuation-alert-copy small { font-size: 7px; }
+
+  .pause-toggle { top: 314px; right: 8px; }
+  .guidance-banner { display: none; }
+
+  .inventory-bar {
+    right: auto;
+    bottom: 252px;
+    left: 8px;
+    padding: 5px 6px;
+    transform: none;
+  }
+
+  .inventory-title { display: none; }
+  .inventory-slot { width: 38px; height: 38px; }
+  .inventory-slot-icon { font-size: 17px; }
+  .inventory-slot-name { font-size: 7px; }
+
+  .training-advice {
+    right: auto;
+    bottom: 150px;
+    left: 8px;
+    width: calc(100vw - 152px);
+    max-width: none;
+    padding: 9px 10px;
+  }
+
+  .training-advice-icon { display: none; }
+  .training-advice-copy strong { font-size: 9px; }
+  .training-advice-copy span { font-size: 8px; line-height: 1.35; }
+
+  .flood-panel {
+    right: 8px;
+    bottom: 150px;
+    width: 126px;
+  }
+
+  .flood-panel header { padding: 7px 10px; font-size: 10px; }
+  .flood-body { padding: 9px 10px 3px; }
+  .flood-gauge, .flood-gauge-ticks { height: 72px; }
+  .flood-forecast { padding: 5px 10px 7px; font-size: 8px; }
+  .interaction-prompt { bottom: 250px; }
+
+  .npc-toast {
+    top: 54px;
+    max-width: calc(100vw - 24px);
+    padding: 7px 10px;
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 380px) and (orientation: portrait) {
+  .mission-panel { width: 154px; }
+  .minimap-panel, .training-status-panel, .evacuation-alert { width: 158px; }
+  .training-advice { width: calc(100vw - 142px); }
+  .flood-panel { width: 118px; }
 }
 
 .edit-panel {
