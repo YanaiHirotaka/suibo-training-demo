@@ -72,6 +72,10 @@ const trainingStatusPanel = document.querySelector('#trainingStatusPanel');
 const trainingTimeRemaining = document.querySelector('#trainingTimeRemaining');
 const trainingTimeState = document.querySelector('#trainingTimeState');
 const rescuedPeopleCount = document.querySelector('#rescuedPeopleCount');
+const evacuationAlert = document.querySelector('#evacuationAlert');
+const evacuationAlertLevel = document.querySelector('#evacuationAlertLevel');
+const evacuationAlertTitle = document.querySelector('#evacuationAlertTitle');
+const evacuationAlertAction = document.querySelector('#evacuationAlertAction');
 const dangerBanner = document.querySelector('#dangerBanner');
 const dangerText = document.querySelector('#dangerText');
 const trainingAdvice = document.querySelector('#trainingAdvice');
@@ -114,6 +118,7 @@ let pauseStartedAt = 0;
 let checkpointDecisionOpen = false;
 let checkpointDecisionResolved = false;
 let checkpointDecisionMistakes = 0;
+let currentEvacuationLevel = 0;
 
 function renderEmergencyItems() {
   emergencyItemOptions.innerHTML = EMERGENCY_ITEMS.map((item) => `
@@ -2979,6 +2984,60 @@ function updateFloodLevel(dt) {
     : floodWaterLevel >= maxLevel ? '最高水位に到達' : '上昇中';
 }
 
+const EVACUATION_LEVELS = [
+  {
+    level: 2,
+    threshold: 0,
+    title: '避難行動を確認',
+    action: 'ハザードマップと持ちものを確認'
+  },
+  {
+    level: 3,
+    threshold: 0.2,
+    title: '高齢者等避難',
+    action: '支援が必要な人へ声をかけて避難開始'
+  },
+  {
+    level: 4,
+    threshold: 0.48,
+    title: '避難指示',
+    action: '危険な場所から全員避難'
+  },
+  {
+    level: 5,
+    threshold: 0.78,
+    title: '緊急安全確保',
+    action: '命を守る最善の行動をとる'
+  }
+];
+
+function updateEvacuationAlert() {
+  if (!characterChosen) return;
+  const progress = activeScenario.flood.maxLevelMeters > 0
+    ? floodWaterLevel / activeScenario.flood.maxLevelMeters
+    : 0;
+  const alert = [...EVACUATION_LEVELS].reverse().find((item) => progress >= item.threshold);
+  if (!alert || alert.level === currentEvacuationLevel) return;
+
+  const previousLevel = currentEvacuationLevel;
+  currentEvacuationLevel = alert.level;
+  evacuationAlertLevel.textContent = `警戒レベル${alert.level}`;
+  evacuationAlertTitle.textContent = alert.title;
+  evacuationAlertAction.textContent = alert.action;
+  evacuationAlert.classList.remove('is-hidden', 'is-level-2', 'is-level-3', 'is-level-4', 'is-level-5');
+  evacuationAlert.classList.add(`is-level-${alert.level}`);
+
+  if (previousLevel > 0) {
+    const severity = alert.level >= 5 ? 'danger' : alert.level >= 4 ? 'warning' : 'info';
+    showTrainingAdvice(
+      `evacuation-level-${alert.level}`,
+      `警戒レベル${alert.level}：${alert.title}`,
+      `${alert.action}。警戒レベルは順番を待たず、危険を感じたら早めに避難しましょう。`,
+      severity, 7500, 0
+    );
+  }
+}
+
 function scenarioRainBaseIntensity() {
   if (activeScenario.id === 'beginner') return 0.3;
   if (activeScenario.id === 'rapid') return 0.78;
@@ -5332,6 +5391,7 @@ function animate(now) {
     updateMissionGuidance();
     updateNpcInteraction(dt);
     updateFloodLevel(dt);
+    updateEvacuationAlert();
     updateWeather(dt);
     updateFloodDanger(dt);
     updateSafeRouteArrowHeights();

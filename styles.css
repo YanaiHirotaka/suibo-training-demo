@@ -182,7 +182,7 @@ body {
 
 .pause-toggle {
   position: fixed;
-  top: 424px;
+  top: 490px;
   right: 18px;
   z-index: 4;
   padding: 8px 11px;
@@ -371,6 +371,61 @@ body {
   background: rgba(122, 20, 20, 0.58);
   animation: statusWarningPulse 1s ease-in-out infinite;
 }
+
+.evacuation-alert {
+  position: fixed;
+  top: 426px;
+  right: 18px;
+  z-index: 4;
+  display: flex;
+  align-items: stretch;
+  width: 270px;
+  overflow: hidden;
+  color: white;
+  background: rgba(8, 38, 62, 0.94);
+  border: 2px solid rgba(255, 224, 112, 0.9);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(7, 33, 48, 0.32);
+  backdrop-filter: blur(8px);
+  transition: opacity 200ms ease, transform 200ms ease, border-color 200ms ease;
+  pointer-events: none;
+}
+
+.evacuation-alert.is-hidden {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+.evacuation-alert-level {
+  display: grid;
+  place-items: center;
+  width: 82px;
+  padding: 9px 7px;
+  color: #102d3f;
+  background: #f0df65;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.evacuation-alert-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px 10px;
+}
+
+.evacuation-alert-copy strong { font-size: 12px; }
+.evacuation-alert-copy small { color: #d7edf5; font-size: 9px; font-weight: 700; }
+.evacuation-alert.is-level-3 { border-color: #e8cf4b; }
+.evacuation-alert.is-level-3 .evacuation-alert-level { background: #e8cf4b; }
+.evacuation-alert.is-level-4 { border-color: #d45252; animation: statusWarningPulse 1.35s ease-in-out infinite; }
+.evacuation-alert.is-level-4 .evacuation-alert-level { color: white; background: #bd3030; }
+.evacuation-alert.is-level-5 { border-color: #8f4eb5; animation: dangerPulse 1s ease-in-out infinite; }
+.evacuation-alert.is-level-5 .evacuation-alert-level { color: white; background: #6e2b91; }
 
 @keyframes statusWarningPulse {
   0%, 100% { opacity: 1; }
@@ -776,9 +831,13 @@ body {
   .inventory-bar { left: 50%; bottom: 104px; padding: 5px 7px; }
   .inventory-slot { width: 42px; height: 42px; }
   .inventory-slot-icon { font-size: 19px; }
-  .pause-toggle { top: 278px; right: 10px; }
+  .pause-toggle { top: 336px; right: 10px; }
   .pause-help-grid { grid-template-columns: 1fr; }
   .training-status-panel { top: 220px; right: 10px; width: 190px; }
+  .evacuation-alert { top: 274px; right: 10px; width: 190px; }
+  .evacuation-alert-level { width: 62px; font-size: 9px; }
+  .evacuation-alert-copy { padding: 7px; }
+  .evacuation-alert-copy strong { font-size: 10px; }
   .training-status-item { gap: 5px; padding: 7px; }
   .training-status-icon { display: none; }
   .training-status-copy strong { font-size: 14px; }
