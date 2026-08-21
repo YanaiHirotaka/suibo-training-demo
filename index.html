@@ -223,7 +223,10 @@
 
   <div class="character-select" id="characterSelect">
     <div class="character-select-panel">
-      <h2>キャラクターを選んでください</h2>
+      <h2>訓練シナリオを選んでください</h2>
+      <div class="scenario-options" id="scenarioOptions"></div>
+      <div class="scenario-selected-summary" id="scenarioSelectedSummary"></div>
+      <h3>キャラクターを選んで開始</h3>
       <div class="character-options">
         <button class="character-card" data-character="rain" type="button">
           <span class="character-swatch character-swatch-rain">
@@ -247,6 +250,7 @@
     <div class="training-complete-panel">
       <h2>訓練完了！</h2>
       <p class="training-complete-sub">お疲れ様でした。避難行動を無事にやり遂げました。</p>
+      <p class="training-result-scenario">シナリオ：<strong id="statScenario">標準訓練</strong></p>
       <div class="training-result-score">
         <span class="training-result-rank" id="statRank">A</span>
         <span class="training-result-score-copy">

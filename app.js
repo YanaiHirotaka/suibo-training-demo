@@ -1,4 +1,5 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+import { TRAINING_SCENARIOS, getTrainingScenario } from './scenarios.js';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -22,6 +23,8 @@ const structureStatus = document.querySelector('#structureStatus');
 const structureDeselectButton = document.querySelector('#structureDeselect');
 const floodToggle = document.querySelector('#floodToggle');
 const characterCards = document.querySelectorAll('.character-card');
+const scenarioOptions = document.querySelector('#scenarioOptions');
+const scenarioSelectedSummary = document.querySelector('#scenarioSelectedSummary');
 const minimapMap = document.querySelector('#minimapMap');
 const minimapContent = document.querySelector('#minimapContent');
 const minimapFrame = document.querySelector('#minimapFrame');
@@ -66,6 +69,7 @@ const npcToastText = document.querySelector('#npcToastText');
 const trainingComplete = document.querySelector('#trainingComplete');
 const statRank = document.querySelector('#statRank');
 const statScore = document.querySelector('#statScore');
+const statScenario = document.querySelector('#statScenario');
 const statElapsedTime = document.querySelector('#statElapsedTime');
 const statRescuedPeople = document.querySelector('#statRescuedPeople');
 const statSafeRoute = document.querySelector('#statSafeRoute');
@@ -74,6 +78,42 @@ const statHealth = document.querySelector('#statHealth');
 const statRespawns = document.querySelector('#statRespawns');
 const trainingFeedbackList = document.querySelector('#trainingFeedbackList');
 const trainingRetryButton = document.querySelector('#trainingRetry');
+const floodGaugeTickLabels = document.querySelectorAll('.flood-gauge-ticks span');
+
+let activeScenario = getTrainingScenario('standard');
+
+function scenarioTimeLabel(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+}
+
+function renderScenarioOptions() {
+  scenarioOptions.innerHTML = TRAINING_SCENARIOS.map((scenario) => `
+    <button class="scenario-card${scenario.id === activeScenario.id ? ' is-active' : ''}" type="button" data-scenario="${scenario.id}">
+      <span class="scenario-card-badge">${scenario.badge}</span>
+      <strong>${scenario.name}</strong>
+      <small>${scenario.description}</small>
+    </button>
+  `).join('');
+  scenarioOptions.querySelectorAll('.scenario-card').forEach((card) => {
+    card.addEventListener('click', () => selectScenario(card.dataset.scenario));
+  });
+}
+
+function selectScenario(id) {
+  if (characterChosen) return;
+  activeScenario = getTrainingScenario(id);
+  scenarioOptions.querySelectorAll('.scenario-card').forEach((card) => {
+    card.classList.toggle('is-active', card.dataset.scenario === activeScenario.id);
+  });
+  scenarioSelectedSummary.textContent = `避難猶予 ${scenarioTimeLabel(activeScenario.timeLimitSeconds)} ／ 最高水位 ${activeScenario.flood.maxLevelMeters.toFixed(1)}m ／ スコア倍率 ×${activeScenario.scoreMultiplier.toFixed(2)}`;
+  floodGaugeTickLabels.forEach((label, index) => {
+    label.textContent = (activeScenario.flood.maxLevelMeters * (3 - index) / 3).toFixed(1);
+  });
+  buildHazardOverlay();
+  updateTrainingStatus(performance.now());
+}
 
 const mapConfig = Object.freeze({
   // 1 Three.js unit = 1 metre. Keep this value fixed so assets remain the same scale.
@@ -2298,7 +2338,6 @@ scene.add(checkpointMarker);
 const SAFE_ROUTE_GRID_BLOCKS = 3;
 const SAFE_ROUTE_RECALCULATE_SECONDS = 2.5;
 const SAFE_ROUTE_RECALCULATE_DISTANCE = 2.2;
-const SAFE_ROUTE_FORECAST_RISE_METERS = 1.2;
 const safeRouteArrowGeometry = new THREE.ShapeGeometry((() => {
   const shape = new THREE.Shape();
   shape.moveTo(0, 0.48);
@@ -2385,7 +2424,10 @@ function routeNodeCost(from, to) {
   const baseDistance = Math.hypot(toWorld.x - fromWorld.x, toWorld.z - fromWorld.z);
   const fromHeight = getWalkableHeight(fromWorld.x, fromWorld.z);
   const toHeight = getWalkableHeight(toWorld.x, toWorld.z);
-  const forecastLevel = Math.min(FLOOD_MAX_LEVEL_METERS, floodWaterLevel + SAFE_ROUTE_FORECAST_RISE_METERS);
+  const forecastLevel = Math.min(
+    activeScenario.flood.maxLevelMeters,
+    floodWaterLevel + activeScenario.flood.forecastRiseMeters
+  );
   const predictedDepth = Math.max(0, forecastLevel - toHeight);
   const floodPenalty = predictedDepth <= 0.15 ? 0 : predictedDepth * predictedDepth * 8;
   const slopePenalty = Math.abs(toHeight - fromHeight) * 3.5;
@@ -2701,8 +2743,6 @@ function updateMissionGuidance() {
 // player has started, submerging low ground (the plateau and anything on it
 // stays dry since it's well above the max level). No per-tile flood state
 // yet - "flooded" is just "is the ground here below the current water Y".
-const FLOOD_MAX_LEVEL_METERS = 3;
-const FLOOD_RISE_METERS_PER_SEC = FLOOD_MAX_LEVEL_METERS / 150; // ~2.5 min to max
 const FLOOD_SPEED_MULTIPLIER = 0.55;
 let floodWaterLevel = 0;
 // Toggled from the edit-mode "水位上昇" checkbox. Pauses/resumes the rise in
@@ -2731,17 +2771,19 @@ function isPositionFlooded(x, z) {
 
 function updateFloodLevel(dt) {
   if (!characterChosen) return;
-  if (floodRisingEnabled && floodWaterLevel < FLOOD_MAX_LEVEL_METERS) {
-    floodWaterLevel = Math.min(FLOOD_MAX_LEVEL_METERS, floodWaterLevel + FLOOD_RISE_METERS_PER_SEC * dt);
+  const maxLevel = activeScenario.flood.maxLevelMeters;
+  const riseMetersPerSecond = maxLevel / activeScenario.flood.riseSeconds;
+  if (floodRisingEnabled && floodWaterLevel < maxLevel) {
+    floodWaterLevel = Math.min(maxLevel, floodWaterLevel + riseMetersPerSecond * dt);
   }
   floodPlane.position.y = floodWaterLevel;
   floodPlane.visible = floodWaterLevel > 0.02;
 
   floodValue.textContent = floodWaterLevel.toFixed(1);
-  floodGaugeFill.style.height = `${Math.min(100, (floodWaterLevel / FLOOD_MAX_LEVEL_METERS) * 100).toFixed(1)}%`;
+  floodGaugeFill.style.height = `${Math.min(100, (floodWaterLevel / maxLevel) * 100).toFixed(1)}%`;
   floodForecast.textContent = !floodRisingEnabled
     ? '上昇を一時停止中'
-    : floodWaterLevel >= FLOOD_MAX_LEVEL_METERS ? '最高水位に到達' : '上昇中';
+    : floodWaterLevel >= maxLevel ? '最高水位に到達' : '上昇中';
 }
 
 floodToggle.addEventListener('change', () => {
@@ -3208,7 +3250,6 @@ let characterChosen = false;
 let trainingStartTime = 0;
 let trainingFinishTime = 0;
 let trainingDeadlineTime = 0;
-const TRAINING_TIME_LIMIT_SECONDS = 180;
 
 function formatRemainingTime(seconds) {
   const wholeSeconds = Math.max(0, Math.ceil(seconds));
@@ -3221,7 +3262,7 @@ function updateTrainingStatus(now) {
   const referenceTime = trainingFinishTime || now;
   const remainingSeconds = characterChosen
     ? Math.max(0, (trainingDeadlineTime - referenceTime) / 1000)
-    : TRAINING_TIME_LIMIT_SECONDS;
+    : activeScenario.timeLimitSeconds;
   const expired = characterChosen && remainingSeconds <= 0;
   const warning = characterChosen && !expired && remainingSeconds <= 60;
 
@@ -3356,9 +3397,9 @@ function updateTrainingMetrics(dt) {
 
 function trainingResult() {
   const elapsedSeconds = Math.max(0, (trainingFinishTime - trainingStartTime) / 1000);
-  const remainingSeconds = Math.max(0, TRAINING_TIME_LIMIT_SECONDS - elapsedSeconds);
+  const remainingSeconds = Math.max(0, activeScenario.timeLimitSeconds - elapsedSeconds);
   const routeRate = routeSampleCount ? safeRouteSampleCount / routeSampleCount : 1;
-  const score = Math.max(0, Math.round(
+  const score = Math.max(0, Math.round((
     6000
     + 1000
     + 1000
@@ -3368,7 +3409,7 @@ function trainingResult() {
     + (playerHealth / PLAYER_MAX_HEALTH) * 1000
     - respawnCount * 800
     - dangerExposureSeconds * 20
-  ));
+  ) * activeScenario.scoreMultiplier));
   const rank = score >= 13500 ? 'S' : score >= 11500 ? 'A' : score >= 9000 ? 'B' : 'C';
   return { elapsedSeconds, routeRate, score, rank };
 }
@@ -3382,7 +3423,7 @@ function trainingFeedback(result) {
   if (dangerExposureSeconds < 2 && respawnCount === 0) feedback.push('深い浸水に入らず、体力を保ったまま避難できました。');
   else feedback.push('水深が1mを超える場所は危険です。浸水の浅い道や高い場所を選びましょう。');
 
-  if (result.elapsedSeconds <= TRAINING_TIME_LIMIT_SECONDS) feedback.push('避難猶予内に、近くの人と一緒に避難所へ到着できました。');
+  if (result.elapsedSeconds <= activeScenario.timeLimitSeconds) feedback.push('避難猶予内に、近くの人と一緒に避難所へ到着できました。');
   else feedback.push('避難開始が遅れるほど水位が上がります。ハザード確認後は早めに行動しましょう。');
   return feedback;
 }
@@ -3402,6 +3443,7 @@ function checkTrainingComplete() {
   const feedback = trainingFeedback(result);
   statRank.textContent = result.rank;
   statScore.textContent = result.score.toLocaleString('ja-JP');
+  statScenario.textContent = activeScenario.name;
   statElapsedTime.textContent = formatElapsedTime(trainingFinishTime - trainingStartTime);
   statRescuedPeople.textContent = missionHelpNpcDone ? '1/1人' : '0/1人';
   statSafeRoute.textContent = `${Math.round(result.routeRate * 100)}%`;
@@ -3437,7 +3479,7 @@ function selectCharacter(type) {
   }
   if (!characterChosen) {
     trainingStartTime = performance.now();
-    trainingDeadlineTime = trainingStartTime + TRAINING_TIME_LIMIT_SECONDS * 1000;
+    trainingDeadlineTime = trainingStartTime + activeScenario.timeLimitSeconds * 1000;
   }
   characterChosen = true;
   characterSelect.classList.add('is-hidden');
@@ -4774,10 +4816,9 @@ function animate(now) {
 // rest of the minimap (roads/river/houses are also drawn once in
 // initMinimap()).
 const FLOOD_SEVERE_HEIGHT_BLOCKS = 5; // roughly the drowning-risk depth
-const FLOOD_SAFE_HEIGHT_BLOCKS = FLOOD_MAX_LEVEL_METERS / tileSize; // never fully floods
-
 function buildHazardOverlay() {
   const cell = mapConfig.cellBlocks;
+  const floodSafeHeightBlocks = activeScenario.flood.maxLevelMeters / tileSize;
   const rects = [];
   for (let z = 0; z < tilesDeep; z += cell) {
     for (let x = 0; x < tilesWide; x += cell) {
@@ -4786,7 +4827,7 @@ function buildHazardOverlay() {
       const height = getTerrainHeightBlocks(sampleX, sampleZ);
       const color = height < FLOOD_SEVERE_HEIGHT_BLOCKS
         ? '#c0392b'
-        : height < FLOOD_SAFE_HEIGHT_BLOCKS ? '#e0a63a' : '#3ecf6b';
+        : height < floodSafeHeightBlocks ? '#e0a63a' : '#3ecf6b';
       const w = Math.min(cell, tilesWide - x);
       const h = Math.min(cell, tilesDeep - z);
       rects.push(`<rect x="${x}" y="${z}" width="${w}" height="${h}" fill="${color}" opacity=".82"/>`);
@@ -4806,7 +4847,8 @@ hazardToggle.addEventListener('click', () => {
 // --------------------------------------------------------------------------
 
 initMinimap();
-buildHazardOverlay();
+renderScenarioOptions();
+selectScenario(activeScenario.id);
 updateMissionProgress();
 updateTrainingStatus(performance.now());
 updateCamera(1);
