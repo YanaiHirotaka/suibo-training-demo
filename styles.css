@@ -170,6 +170,76 @@ body {
   font-family: "Consolas", "Courier New", monospace;
 }
 
+.training-status-panel {
+  position: fixed;
+  top: 370px;
+  right: 18px;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 270px;
+  overflow: hidden;
+  color: white;
+  background: rgba(8, 38, 62, 0.94);
+  border: 2px solid rgba(183, 220, 236, 0.9);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(7, 33, 48, 0.32);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
+.training-status-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 11px;
+}
+
+.training-status-item + .training-status-item {
+  border-left: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.training-status-icon {
+  color: #8de6ff;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.training-status-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  line-height: 1.05;
+}
+
+.training-status-copy small {
+  margin-bottom: 3px;
+  color: #b9dbe9;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.training-status-copy strong {
+  font: 900 17px/1 "Consolas", "Courier New", monospace;
+}
+
+.training-status-panel.is-warning .training-time-item {
+  color: #ffe36b;
+  background: rgba(123, 75, 0, 0.45);
+}
+
+.training-status-panel.is-expired .training-time-item {
+  color: #ffb0a8;
+  background: rgba(122, 20, 20, 0.58);
+  animation: statusWarningPulse 1s ease-in-out infinite;
+}
+
+@keyframes statusWarningPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.72; }
+}
+
 .mission-panel {
   position: fixed;
   top: 90px;
@@ -484,6 +554,10 @@ body {
   .minimap-panel header { padding: 7px 10px; font-size: 13px; }
   .minimap-map { height: 160px; }
   .minimap-panel footer { display: none; }
+  .training-status-panel { top: 220px; right: 10px; width: 190px; }
+  .training-status-item { gap: 5px; padding: 7px; }
+  .training-status-icon { display: none; }
+  .training-status-copy strong { font-size: 14px; }
   .health-panel { top: 42px; }
   .health-bar { width: 60px; }
   .mission-panel { width: 190px; top: 78px; }

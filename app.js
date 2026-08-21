@@ -55,6 +55,10 @@ const floodForecast = document.querySelector('#floodForecast');
 const floodPanel = document.querySelector('#floodPanel');
 const healthBarFill = document.querySelector('#healthBarFill');
 const healthText = document.querySelector('#healthText');
+const trainingStatusPanel = document.querySelector('#trainingStatusPanel');
+const trainingTimeRemaining = document.querySelector('#trainingTimeRemaining');
+const trainingTimeState = document.querySelector('#trainingTimeState');
+const rescuedPeopleCount = document.querySelector('#rescuedPeopleCount');
 const dangerBanner = document.querySelector('#dangerBanner');
 const dangerText = document.querySelector('#dangerText');
 const npcToast = document.querySelector('#npcToast');
@@ -3177,6 +3181,31 @@ player.position.set(startX, 0, startZ);
 scene.add(player);
 let characterChosen = false;
 let trainingStartTime = 0;
+let trainingFinishTime = 0;
+let trainingDeadlineTime = 0;
+const TRAINING_TIME_LIMIT_SECONDS = 180;
+
+function formatRemainingTime(seconds) {
+  const wholeSeconds = Math.max(0, Math.ceil(seconds));
+  const minutes = Math.floor(wholeSeconds / 60);
+  const remainingSeconds = wholeSeconds % 60;
+  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+}
+
+function updateTrainingStatus(now) {
+  const referenceTime = trainingFinishTime || now;
+  const remainingSeconds = characterChosen
+    ? Math.max(0, (trainingDeadlineTime - referenceTime) / 1000)
+    : TRAINING_TIME_LIMIT_SECONDS;
+  const expired = characterChosen && remainingSeconds <= 0;
+  const warning = characterChosen && !expired && remainingSeconds <= 60;
+
+  trainingTimeRemaining.textContent = formatRemainingTime(remainingSeconds);
+  trainingTimeState.textContent = expired ? '避難猶予を超過' : warning ? '避難を急いで' : '避難猶予';
+  rescuedPeopleCount.textContent = `${missionHelpNpcDone ? 1 : 0}/1`;
+  trainingStatusPanel.classList.toggle('is-warning', warning);
+  trainingStatusPanel.classList.toggle('is-expired', expired);
+}
 
 // --- Helper NPC ("近くの人に声をかけて助け合おう") --------------------------
 // A stationary character along the route from the start house toward the
@@ -3295,7 +3324,8 @@ function formatElapsedTime(ms) {
 function checkTrainingComplete() {
   if (trainingCompleteShown || !missionHazardChecked || !missionCheckpointDone || !missionHelpNpcDone || !missionReachShelterDone) return;
   trainingCompleteShown = true;
-  statElapsedTime.textContent = formatElapsedTime(performance.now() - trainingStartTime);
+  trainingFinishTime = performance.now();
+  statElapsedTime.textContent = formatElapsedTime(trainingFinishTime - trainingStartTime);
   statHealth.textContent = `${Math.ceil(playerHealth)}/${PLAYER_MAX_HEALTH}`;
   statRespawns.textContent = `${respawnCount}回`;
   trainingComplete.classList.remove('is-hidden');
@@ -3324,7 +3354,10 @@ function selectCharacter(type) {
     scene.add(player);
     currentCharacterType = type;
   }
-  if (!characterChosen) trainingStartTime = performance.now();
+  if (!characterChosen) {
+    trainingStartTime = performance.now();
+    trainingDeadlineTime = trainingStartTime + TRAINING_TIME_LIMIT_SECONDS * 1000;
+  }
   characterChosen = true;
   characterSelect.classList.add('is-hidden');
 }
@@ -4638,6 +4671,7 @@ function animate(now) {
   updateFloodLevel(dt);
   updateFloodDanger(dt);
   updateSafeRouteArrowHeights();
+  updateTrainingStatus(now);
   updateRiver(now);
   renderer.render(scene, camera);
 
@@ -4692,6 +4726,7 @@ hazardToggle.addEventListener('click', () => {
 initMinimap();
 buildHazardOverlay();
 updateMissionProgress();
+updateTrainingStatus(performance.now());
 updateCamera(1);
 requestAnimationFrame(animate);
 
