@@ -4297,6 +4297,8 @@ const cameraPitchMin = -0.38;
 const cameraPitchMax = 1.48;
 let cameraDistance = 3.6;
 let dragging = false;
+const activeCanvasPointers = new Map();
+let lastPinchDistance = 0;
 let walkTime = 0;
 let lastTime = performance.now();
 let verticalVelocity = 0;
@@ -4403,6 +4405,9 @@ function releaseAllKeys() {
   keys.clear();
   keyLastSeen.clear();
   virtualControlCodes.clear();
+  activeCanvasPointers.clear();
+  lastPinchDistance = 0;
+  dragging = false;
   touchControls.querySelectorAll('.is-pressed').forEach((button) => button.classList.remove('is-pressed'));
 }
 addEventListener('blur', releaseAllKeys);
@@ -5220,16 +5225,37 @@ canvas.addEventListener('pointerdown', (event) => {
     startPaintLoop(event.clientX, event.clientY);
     return;
   }
+  if (event.pointerType === 'touch') {
+    event.preventDefault();
+    canvas.setPointerCapture(event.pointerId);
+    activeCanvasPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    dragging = true;
+    if (activeCanvasPointers.size >= 2) {
+      const [first, second] = [...activeCanvasPointers.values()];
+      lastPinchDistance = Math.hypot(second.x - first.x, second.y - first.y);
+    }
+    return;
+  }
   dragging = true;
   canvas.setPointerCapture(event.pointerId);
 });
-canvas.addEventListener('pointerup', (event) => {
-  dragging = false;
+
+function finishCanvasPointer(event) {
+  if (event.pointerType === 'touch') {
+    activeCanvasPointers.delete(event.pointerId);
+    dragging = activeCanvasPointers.size > 0;
+    if (activeCanvasPointers.size < 2) lastPinchDistance = 0;
+  } else {
+    dragging = false;
+  }
   painting = false;
   stopPaintLoop();
   handleRangePointerUp();
-  canvas.releasePointerCapture(event.pointerId);
-});
+  if (canvas.hasPointerCapture?.(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+}
+
+canvas.addEventListener('pointerup', finishCanvasPointer);
+canvas.addEventListener('pointercancel', finishCanvasPointer);
 canvas.addEventListener('pointermove', (event) => {
   if (rangeDragging) {
     handleRangePointerMove(event);
@@ -5239,6 +5265,31 @@ canvas.addEventListener('pointermove', (event) => {
     lastPaintX = event.clientX;
     lastPaintY = event.clientY;
     updateBrushHighlight(event.clientX, event.clientY);
+    return;
+  }
+  if (event.pointerType === 'touch' && activeCanvasPointers.has(event.pointerId)) {
+    event.preventDefault();
+    const previous = activeCanvasPointers.get(event.pointerId);
+    activeCanvasPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (activeCanvasPointers.size >= 2) {
+      const [first, second] = [...activeCanvasPointers.values()];
+      const pinchDistance = Math.hypot(second.x - first.x, second.y - first.y);
+      if (lastPinchDistance > 0) {
+        cameraDistance = THREE.MathUtils.clamp(
+          cameraDistance - (pinchDistance - lastPinchDistance) * 0.012,
+          2.7,
+          8
+        );
+      }
+      lastPinchDistance = pinchDistance;
+    } else {
+      cameraYaw -= (event.clientX - previous.x) * 0.008;
+      cameraPitch = THREE.MathUtils.clamp(
+        cameraPitch + (event.clientY - previous.y) * 0.006,
+        cameraPitchMin,
+        cameraPitchMax
+      );
+    }
     return;
   }
   if (dragging) {
