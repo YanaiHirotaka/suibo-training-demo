@@ -32,6 +32,7 @@ const inventorySlots = document.querySelector('#inventorySlots');
 const pauseToggle = document.querySelector('#pauseToggle');
 const pauseMenu = document.querySelector('#pauseMenu');
 const pauseResume = document.querySelector('#pauseResume');
+const soundToggle = document.querySelector('#soundToggle');
 const checkpointDecision = document.querySelector('#checkpointDecision');
 const checkpointDecisionFeedback = document.querySelector('#checkpointDecisionFeedback');
 const minimapMap = document.querySelector('#minimapMap');
@@ -122,6 +123,76 @@ let checkpointDecisionOpen = false;
 let checkpointDecisionResolved = false;
 let checkpointDecisionMistakes = 0;
 let currentEvacuationLevel = 0;
+let audioEnabled = true;
+let audioContext = null;
+let masterAudioGain = null;
+let rainAudioGain = null;
+
+function ensureAudio() {
+  if (audioContext) {
+    if (audioContext.state === 'suspended') audioContext.resume();
+    return audioContext;
+  }
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return null;
+  audioContext = new AudioContextClass();
+  masterAudioGain = audioContext.createGain();
+  masterAudioGain.gain.value = audioEnabled ? 0.55 : 0;
+  masterAudioGain.connect(audioContext.destination);
+
+  const buffer = audioContext.createBuffer(1, audioContext.sampleRate * 2, audioContext.sampleRate);
+  const samples = buffer.getChannelData(0);
+  for (let index = 0; index < samples.length; index++) samples[index] = Math.random() * 2 - 1;
+  const rainSource = audioContext.createBufferSource();
+  const rainFilter = audioContext.createBiquadFilter();
+  rainAudioGain = audioContext.createGain();
+  rainSource.buffer = buffer;
+  rainSource.loop = true;
+  rainFilter.type = 'bandpass';
+  rainFilter.frequency.value = 2600;
+  rainFilter.Q.value = 0.45;
+  rainAudioGain.gain.value = 0;
+  rainSource.connect(rainFilter).connect(rainAudioGain).connect(masterAudioGain);
+  rainSource.start();
+  return audioContext;
+}
+
+function setRainAudioLevel(level) {
+  if (!rainAudioGain || !audioContext) return;
+  rainAudioGain.gain.setTargetAtTime(audioEnabled ? level : 0, audioContext.currentTime, 0.18);
+}
+
+function playToneSequence(notes) {
+  const context = ensureAudio();
+  if (!context || !audioEnabled || !masterAudioGain) return;
+  let startTime = context.currentTime + 0.02;
+  notes.forEach(({ frequency, duration, volume = 0.16 }) => {
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = 'sine';
+    oscillator.frequency.value = frequency;
+    gain.gain.setValueAtTime(0.0001, startTime);
+    gain.gain.exponentialRampToValueAtTime(volume, startTime + 0.025);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+    oscillator.connect(gain).connect(masterAudioGain);
+    oscillator.start(startTime);
+    oscillator.stop(startTime + duration + 0.03);
+    startTime += duration + 0.045;
+  });
+}
+
+function setAudioEnabled(enabled) {
+  audioEnabled = enabled;
+  soundToggle.setAttribute('aria-pressed', String(enabled));
+  soundToggle.textContent = enabled ? '🔊 環境音・通知音：オン' : '🔇 環境音・通知音：オフ';
+  if (!audioContext || !masterAudioGain) return;
+  masterAudioGain.gain.setTargetAtTime(enabled ? 0.55 : 0, audioContext.currentTime, 0.05);
+}
+
+soundToggle.addEventListener('click', () => {
+  ensureAudio();
+  setAudioEnabled(!audioEnabled);
+});
 
 function renderEmergencyItems() {
   emergencyItemOptions.innerHTML = EMERGENCY_ITEMS.map((item) => `
@@ -3031,6 +3102,9 @@ function updateEvacuationAlert() {
   evacuationAlert.classList.add(`is-level-${alert.level}`);
 
   if (previousLevel > 0) {
+    playToneSequence(alert.level >= 4
+      ? [{ frequency: 520, duration: 0.16 }, { frequency: 440, duration: 0.22 }, { frequency: 520, duration: 0.25 }]
+      : [{ frequency: 660, duration: 0.14 }, { frequency: 780, duration: 0.2 }]);
     const severity = alert.level >= 5 ? 'danger' : alert.level >= 4 ? 'warning' : 'info';
     showTrainingAdvice(
       `evacuation-level-${alert.level}`,
@@ -3098,6 +3172,7 @@ function updateWeather(dt) {
   scene.fog.far = THREE.MathUtils.lerp(150, 105, stormAmount);
   sun.intensity = THREE.MathUtils.lerp(2.35, 1.3, stormAmount);
   skyLight.intensity = THREE.MathUtils.lerp(1.7, 1.15, stormAmount);
+  setRainAudioLevel(weatherIntensity * 0.22);
 }
 
 floodToggle.addEventListener('change', () => {
@@ -3985,6 +4060,12 @@ function trainingFailureFeedback() {
 function showTrainingFailure() {
   if (trainingCompleteShown) return;
   trainingCompleteShown = true;
+  setRainAudioLevel(0);
+  playToneSequence([
+    { frequency: 390, duration: 0.22, volume: 0.13 },
+    { frequency: 310, duration: 0.3, volume: 0.14 },
+    { frequency: 240, duration: 0.45, volume: 0.15 }
+  ]);
   trainingFinishTime = performance.now();
   releaseAllKeys();
   if (document.pointerLockElement) document.exitPointerLock();
@@ -4017,6 +4098,12 @@ function showTrainingFailure() {
 function checkTrainingComplete() {
   if (trainingCompleteShown || !missionHazardChecked || !missionCheckpointDone || !missionHelpNpcDone || !missionReachShelterDone) return;
   trainingCompleteShown = true;
+  setRainAudioLevel(0);
+  playToneSequence([
+    { frequency: 523, duration: 0.15 },
+    { frequency: 659, duration: 0.15 },
+    { frequency: 784, duration: 0.32, volume: 0.2 }
+  ]);
   trainingFinishTime = performance.now();
   trainingComplete.classList.remove('is-failed');
   trainingResultTitle.textContent = '訓練完了！';
@@ -4073,6 +4160,7 @@ function selectCharacter(type) {
     trainingDeadlineTime = trainingStartTime + activeScenario.timeLimitSeconds * 1000;
   }
   characterChosen = true;
+  ensureAudio();
   characterSelect.classList.add('is-hidden');
   inventoryBar.classList.remove('is-hidden');
   pauseToggle.classList.remove('is-hidden');
@@ -4086,6 +4174,7 @@ function setGamePaused(paused) {
   pauseMenu.classList.toggle('is-hidden', !paused);
   pauseToggle.innerHTML = `${paused ? '▶ 再開' : '☰ メニュー'} <kbd>Esc</kbd>`;
   if (paused) {
+    setRainAudioLevel(0);
     pauseStartedAt = performance.now();
     releaseAllKeys();
     if (document.pointerLockElement) document.exitPointerLock();
