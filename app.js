@@ -91,6 +91,7 @@ const trainingResultSubtitle = document.querySelector('#trainingResultSubtitle')
 const trainingFeedbackTitle = document.querySelector('#trainingFeedbackTitle');
 const statRank = document.querySelector('#statRank');
 const statScore = document.querySelector('#statScore');
+const trainingPersonalBest = document.querySelector('#trainingPersonalBest');
 const statScenario = document.querySelector('#statScenario');
 const statElapsedTime = document.querySelector('#statElapsedTime');
 const statRescuedPeople = document.querySelector('#statRescuedPeople');
@@ -105,6 +106,60 @@ const trainingRetryButton = document.querySelector('#trainingRetry');
 const floodGaugeTickLabels = document.querySelectorAll('.flood-gauge-ticks span');
 
 let activeScenario = getTrainingScenario('standard');
+const TRAINING_RECORDS_STORAGE_KEY = 'suibo-training-records-v1';
+
+function loadTrainingRecords() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(TRAINING_RECORDS_STORAGE_KEY) || '{}');
+    return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+  } catch (error) {
+    console.warn('Could not load training records:', error);
+    return {};
+  }
+}
+
+let trainingRecords = loadTrainingRecords();
+
+function trainingRecordFor(scenarioId) {
+  const record = trainingRecords[scenarioId];
+  return record && typeof record === 'object' ? record : null;
+}
+
+function saveTrainingRecord(result = null) {
+  const previous = trainingRecordFor(activeScenario.id) || {
+    attempts: 0,
+    successes: 0,
+    bestScore: 0,
+    bestRank: '',
+    bestTimeSeconds: null
+  };
+  const completed = Boolean(result);
+  const newBestScore = completed && result.score > (previous.bestScore || 0);
+  const newBestTime = completed && (
+    !Number.isFinite(previous.bestTimeSeconds)
+    || result.elapsedSeconds < previous.bestTimeSeconds
+  );
+  const next = {
+    attempts: (previous.attempts || 0) + 1,
+    successes: (previous.successes || 0) + (completed ? 1 : 0),
+    bestScore: newBestScore ? result.score : previous.bestScore || 0,
+    bestRank: newBestScore ? result.rank : previous.bestRank || '',
+    bestTimeSeconds: newBestTime ? result.elapsedSeconds : previous.bestTimeSeconds
+  };
+  trainingRecords = { ...trainingRecords, [activeScenario.id]: next };
+  try {
+    localStorage.setItem(TRAINING_RECORDS_STORAGE_KEY, JSON.stringify(trainingRecords));
+  } catch (error) {
+    console.warn('Could not save training records:', error);
+  }
+  return { record: next, newBestScore, newBestTime };
+}
+
+function recordSummary(record) {
+  if (!record || !record.attempts) return '未挑戦';
+  if (!record.successes) return `挑戦 ${record.attempts}回・クリア未達`;
+  return `最高 ${record.bestRank} ${Number(record.bestScore).toLocaleString('ja-JP')}pt・最短 ${formatElapsedTime(record.bestTimeSeconds * 1000)}`;
+}
 const EMERGENCY_ITEMS = [
   { id: 'flashlight', label: 'ライト', icon: '🔦', recommended: true },
   { id: 'water', label: '飲料水', icon: '💧', recommended: true },
@@ -252,6 +307,7 @@ function renderScenarioOptions() {
       <span class="scenario-card-badge">${scenario.badge}</span>
       <strong>${scenario.name}</strong>
       <small>${scenario.description}</small>
+      <span class="scenario-card-record">${recordSummary(trainingRecordFor(scenario.id))}</span>
     </button>
   `).join('');
   scenarioOptions.querySelectorAll('.scenario-card').forEach((card) => {
@@ -4077,6 +4133,9 @@ function showTrainingFailure() {
   trainingFeedbackTitle.textContent = '次回の改善ポイント';
   statRank.textContent = '未達';
   statScore.textContent = '0';
+  const savedAttempt = saveTrainingRecord();
+  trainingPersonalBest.classList.remove('is-new-record');
+  trainingPersonalBest.textContent = recordSummary(savedAttempt.record);
   statScenario.textContent = activeScenario.name;
   statElapsedTime.textContent = formatElapsedTime(activeScenario.timeLimitSeconds * 1000);
   statRescuedPeople.textContent = `${rescuedPeopleTotal()}/${npcHelpers.length}人`;
@@ -4110,9 +4169,14 @@ function checkTrainingComplete() {
   trainingResultSubtitle.textContent = 'お疲れ様でした。避難行動を無事にやり遂げました。';
   trainingFeedbackTitle.textContent = '今回の振り返り';
   const result = trainingResult();
+  const savedResult = saveTrainingRecord(result);
   const feedback = trainingFeedback(result);
   statRank.textContent = result.rank;
   statScore.textContent = result.score.toLocaleString('ja-JP');
+  trainingPersonalBest.classList.toggle('is-new-record', savedResult.newBestScore || savedResult.newBestTime);
+  trainingPersonalBest.textContent = savedResult.newBestScore || savedResult.newBestTime
+    ? `★ 自己ベスト更新　${recordSummary(savedResult.record)}`
+    : recordSummary(savedResult.record);
   statScenario.textContent = activeScenario.name;
   statElapsedTime.textContent = formatElapsedTime(trainingFinishTime - trainingStartTime);
   statRescuedPeople.textContent = `${rescuedPeopleTotal()}/${npcHelpers.length}人`;
