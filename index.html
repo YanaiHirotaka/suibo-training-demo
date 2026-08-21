@@ -19,7 +19,7 @@
   </div>
 
   <aside class="mission-panel" id="missionPanel" aria-label="ミッション">
-    <header>ミッション <span id="missionProgress">0/3</span></header>
+    <header>ミッション <span id="missionProgress">0/4</span></header>
     <ul class="mission-list" id="missionList">
       <li class="mission-item" id="missionInspectHazard">
         <span class="mission-check">✓</span>
@@ -29,9 +29,13 @@
         <span class="mission-check">✓</span>
         <span class="mission-text">安全ルートのチェックポイントを通過しよう</span>
       </li>
+      <li class="mission-item" id="missionHelpNpc">
+        <span class="mission-check">✓</span>
+        <span class="mission-text">近くの人に声をかけよう</span>
+      </li>
       <li class="mission-item" id="missionReachShelter">
         <span class="mission-check">✓</span>
-        <span class="mission-text">近くの人を助けて避難所へ向かおう</span>
+        <span class="mission-text">一緒に避難所へ向かおう</span>
       </li>
     </ul>
   </aside>
@@ -39,6 +43,11 @@
   <div class="npc-toast is-hidden" id="npcToast">
     <span class="npc-toast-icon">💚</span>
     <span id="npcToastText">近くの人を助けました！</span>
+  </div>
+
+  <div class="interaction-prompt is-hidden" id="interactionPrompt" aria-live="polite">
+    <kbd>E</kbd>
+    <span id="interactionPromptText">声をかける</span>
   </div>
 
   <aside class="flood-panel" id="floodPanel" aria-label="現在の水位">
@@ -111,7 +120,7 @@
 
   <div class="start-guide" id="startGuide">
     <p>クリックして操作開始</p>
-    <small>WASD：移動　マウス：カメラ　Shift：走る　Space：ジャンプ</small>
+    <small>WASD：移動　マウス：カメラ　Shift：走る　Space：ジャンプ　E：声をかける</small>
   </div>
 
   <div class="edit-panel">

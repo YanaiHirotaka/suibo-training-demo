@@ -40,8 +40,11 @@ const minimapGoal = document.querySelector('#minimapGoal');
 const minimapGoalLine = document.querySelector('#minimapGoalLine');
 const missionInspectHazard = document.querySelector('#missionInspectHazard');
 const missionReachCheckpoint = document.querySelector('#missionReachCheckpoint');
+const missionHelpNpc = document.querySelector('#missionHelpNpc');
 const missionReachShelter = document.querySelector('#missionReachShelter');
 const missionProgress = document.querySelector('#missionProgress');
+const interactionPrompt = document.querySelector('#interactionPrompt');
+const interactionPromptText = document.querySelector('#interactionPromptText');
 const guidanceBanner = document.querySelector('#guidanceBanner');
 const guidanceArrow = document.querySelector('#guidanceArrow');
 const guidanceDistance = document.querySelector('#guidanceDistance');
@@ -2281,9 +2284,20 @@ let missionHazardChecked = false;
 let missionCheckpointDone = false;
 let missionReachShelterDone = false;
 
+const missionStages = [
+  { element: missionInspectHazard, isComplete: () => missionHazardChecked },
+  { element: missionReachCheckpoint, isComplete: () => missionCheckpointDone },
+  { element: missionHelpNpc, isComplete: () => missionHelpNpcDone },
+  { element: missionReachShelter, isComplete: () => missionReachShelterDone }
+];
+
 function updateMissionProgress() {
-  const complete = Number(missionHazardChecked) + Number(missionCheckpointDone) + Number(missionReachShelterDone);
-  missionProgress.textContent = `${complete}/3`;
+  const complete = missionStages.filter((stage) => stage.isComplete()).length;
+  missionProgress.textContent = `${complete}/${missionStages.length}`;
+  const currentStage = missionStages.find((stage) => !stage.isComplete());
+  missionStages.forEach((stage) => {
+    stage.element.classList.toggle('is-current', stage === currentStage);
+  });
 }
 
 function completeHazardMission() {
@@ -2941,21 +2955,42 @@ function showNpcToast(text, durationMs) {
   npcToastTimeoutId = setTimeout(() => npcToast.classList.add('is-hidden'), durationMs);
 }
 
+function setInteractionPrompt(visible, text = '声をかける') {
+  interactionPromptText.textContent = text;
+  interactionPrompt.classList.toggle('is-hidden', !visible);
+}
+
+function npcDistanceFromPlayer() {
+  return Math.hypot(
+    npcHelper.position.x - player.position.x,
+    npcHelper.position.z - player.position.z
+  );
+}
+
+function tryHelpNpc() {
+  if (!characterChosen || missionHelpNpcDone || npcDistanceFromPlayer() > NPC_HELP_RADIUS_METERS) return;
+  if (!missionHazardChecked || !missionCheckpointDone) {
+    showNpcToast('先にハザードマップを確認し、安全ルートのチェックポイントへ向かいましょう。', 3200);
+    return;
+  }
+  missionHelpNpcDone = true;
+  missionHelpNpc.classList.add('is-done');
+  setInteractionPrompt(false);
+  showNpcToast('声をかけて安全を確認しました。一緒に避難所へ向かいましょう。', 3200);
+  updateMissionProgress();
+}
+
 function updateNpcInteraction(dt) {
   if (!characterChosen) return;
 
   if (!missionHelpNpcDone) {
-    const dx = npcHelper.position.x - player.position.x;
-    const dz = npcHelper.position.z - player.position.z;
-    if (Math.hypot(dx, dz) > NPC_HELP_RADIUS_METERS) return;
-    if (!missionHazardChecked || !missionCheckpointDone) {
-      showNpcToast('先にハザードマップを確認し、安全ルートのチェックポイントへ向かいましょう。', 3200);
-      return;
-    }
-    missionHelpNpcDone = true;
-    showNpcToast('近くの人を助けました！ 一緒に避難所へ向かいましょう。', 3000);
+    const inRange = npcDistanceFromPlayer() <= NPC_HELP_RADIUS_METERS;
+    const canHelp = missionHazardChecked && missionCheckpointDone;
+    setInteractionPrompt(inRange, canHelp ? '声をかける' : '先に安全ルートを確認しよう');
     return;
   }
+
+  setInteractionPrompt(false);
 
   const dx = player.position.x - npcHelper.position.x;
   const dz = player.position.z - npcHelper.position.z;
@@ -3093,6 +3128,12 @@ addEventListener('keydown', (event) => {
   }
 
   if (!characterChosen) return;
+
+  if (!editMode && event.code === 'KeyE') {
+    event.preventDefault();
+    if (!event.repeat) tryHelpNpc();
+    return;
+  }
 
   // While a building is selected in edit mode, WASD nudges the building
   // instead of walking the player. Ctrl+Z/Y are deliberately left to fall
@@ -4390,6 +4431,7 @@ hazardToggle.addEventListener('click', () => {
 
 initMinimap();
 buildHazardOverlay();
+updateMissionProgress();
 updateCamera(1);
 requestAnimationFrame(animate);
 
