@@ -4,6 +4,7 @@ html,
 body {
   width: 100%;
   height: 100%;
+  height: 100dvh;
   margin: 0;
   overflow: hidden;
   background: #83cffa;
@@ -14,6 +15,7 @@ body {
   display: block;
   width: 100%;
   height: 100%;
+  height: 100dvh;
   touch-action: none;
   outline: none;
 }
@@ -945,8 +947,8 @@ body {
 
   .touch-dpad {
     position: absolute;
-    bottom: 18px;
-    left: 16px;
+    bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+    left: calc(16px + env(safe-area-inset-left, 0px));
     display: grid;
     grid-template: repeat(3, 48px) / repeat(3, 48px);
     gap: 3px;
@@ -985,8 +987,8 @@ body {
 
   .touch-actions {
     position: absolute;
-    right: 16px;
-    bottom: 20px;
+    right: calc(16px + env(safe-area-inset-right, 0px));
+    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
     display: flex;
     align-items: flex-end;
     gap: 8px;
@@ -1005,7 +1007,7 @@ body {
   .touch-tutorial:not(.is-hidden) {
     position: fixed;
     left: 50%;
-    bottom: 176px;
+    bottom: calc(176px + env(safe-area-inset-bottom, 0px));
     z-index: 7;
     display: block;
     width: min(310px, calc(100vw - 32px));
@@ -1062,12 +1064,18 @@ body {
 }
 
 @media (max-width: 700px) and (orientation: portrait) {
-  .fps-counter { top: 8px; left: 8px; }
-  .health-panel { top: 40px; left: 8px; }
+  .fps-counter {
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    left: calc(8px + env(safe-area-inset-left, 0px));
+  }
+  .health-panel {
+    top: calc(40px + env(safe-area-inset-top, 0px));
+    left: calc(8px + env(safe-area-inset-left, 0px));
+  }
 
   .mission-panel {
-    top: 76px;
-    left: 8px;
+    top: calc(76px + env(safe-area-inset-top, 0px));
+    left: calc(8px + env(safe-area-inset-left, 0px));
     width: 174px;
   }
 
@@ -1075,8 +1083,8 @@ body {
   .mission-item { font-size: 10px; }
 
   .minimap-panel {
-    top: 8px;
-    right: 8px;
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    right: calc(8px + env(safe-area-inset-right, 0px));
     width: 174px;
   }
 
@@ -1089,14 +1097,14 @@ body {
   .hazard-legend { gap: 3px 8px; padding: 0 8px 7px; font-size: 7px; }
 
   .training-status-panel {
-    top: 206px;
-    right: 8px;
+    top: calc(206px + env(safe-area-inset-top, 0px));
+    right: calc(8px + env(safe-area-inset-right, 0px));
     width: 174px;
   }
 
   .evacuation-alert {
-    top: 258px;
-    right: 8px;
+    top: calc(258px + env(safe-area-inset-top, 0px));
+    right: calc(8px + env(safe-area-inset-right, 0px));
     width: 174px;
   }
 
@@ -1105,13 +1113,16 @@ body {
   .evacuation-alert-copy strong { font-size: 9px; }
   .evacuation-alert-copy small { font-size: 7px; }
 
-  .pause-toggle { top: 314px; right: 8px; }
+  .pause-toggle {
+    top: calc(314px + env(safe-area-inset-top, 0px));
+    right: calc(8px + env(safe-area-inset-right, 0px));
+  }
   .guidance-banner { display: none; }
 
   .inventory-bar {
     right: auto;
-    bottom: 252px;
-    left: 8px;
+    bottom: calc(252px + env(safe-area-inset-bottom, 0px));
+    left: calc(8px + env(safe-area-inset-left, 0px));
     padding: 5px 6px;
     transform: none;
   }
@@ -1123,8 +1134,8 @@ body {
 
   .training-advice {
     right: auto;
-    bottom: 150px;
-    left: 8px;
+    bottom: calc(150px + env(safe-area-inset-bottom, 0px));
+    left: calc(8px + env(safe-area-inset-left, 0px));
     width: calc(100vw - 152px);
     max-width: none;
     padding: 9px 10px;
@@ -1135,8 +1146,8 @@ body {
   .training-advice-copy span { font-size: 8px; line-height: 1.35; }
 
   .flood-panel {
-    right: 8px;
-    bottom: 150px;
+    right: calc(8px + env(safe-area-inset-right, 0px));
+    bottom: calc(150px + env(safe-area-inset-bottom, 0px));
     width: 126px;
   }
 
@@ -1144,7 +1155,7 @@ body {
   .flood-body { padding: 9px 10px 3px; }
   .flood-gauge, .flood-gauge-ticks { height: 72px; }
   .flood-forecast { padding: 5px 10px 7px; font-size: 8px; }
-  .interaction-prompt { bottom: 250px; }
+  .interaction-prompt { bottom: calc(250px + env(safe-area-inset-bottom, 0px)); }
 
   .npc-toast {
     top: 54px;
