@@ -38,6 +38,7 @@ const minimapPlayer = document.querySelector('#minimapPlayer');
 const minimapSizeLabel = document.querySelector('#minimapSizeLabel');
 const minimapGoal = document.querySelector('#minimapGoal');
 const minimapGoalLine = document.querySelector('#minimapGoalLine');
+const minimapSafeRoute = document.querySelector('#minimapSafeRoute');
 const missionInspectHazard = document.querySelector('#missionInspectHazard');
 const missionReachCheckpoint = document.querySelector('#missionReachCheckpoint');
 const missionHelpNpc = document.querySelector('#missionHelpNpc');
@@ -2280,6 +2281,264 @@ checkpointMarker.position.copy(checkpointPosition);
 checkpointMarker.name = 'SafeRouteCheckpoint';
 scene.add(checkpointMarker);
 
+// --- Flood-aware safe route -------------------------------------------------
+// Routes are searched on a 3-block navigation grid. Each node is weighted by
+// projected flood depth, terrain slope, and whether it follows a road. This is
+// intentionally a forecast route rather than merely the shortest straight line.
+const SAFE_ROUTE_GRID_BLOCKS = 3;
+const SAFE_ROUTE_RECALCULATE_SECONDS = 2.5;
+const SAFE_ROUTE_RECALCULATE_DISTANCE = 2.2;
+const SAFE_ROUTE_FORECAST_RISE_METERS = 1.2;
+const safeRouteArrowGeometry = new THREE.ShapeGeometry((() => {
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0.48);
+  shape.lineTo(0.29, 0.04);
+  shape.lineTo(0.12, 0.04);
+  shape.lineTo(0.12, -0.42);
+  shape.lineTo(-0.12, -0.42);
+  shape.lineTo(-0.12, 0.04);
+  shape.lineTo(-0.29, 0.04);
+  shape.closePath();
+  return shape;
+})());
+safeRouteArrowGeometry.rotateX(-Math.PI / 2);
+const safeRouteArrowMaterial = new THREE.MeshBasicMaterial({
+  color: 0x53f57d,
+  transparent: true,
+  opacity: 0.88,
+  depthWrite: false,
+  side: THREE.DoubleSide
+});
+const safeRouteArrowGroup = new THREE.Group();
+safeRouteArrowGroup.name = 'SafeRouteArrows';
+safeRouteArrowGroup.renderOrder = 8;
+scene.add(safeRouteArrowGroup);
+
+let safeRoutePoints = [];
+let safeRouteGoalKey = '';
+let safeRouteLastStart = new THREE.Vector2(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY);
+let safeRouteRecalculateTimer = 0;
+
+function currentMissionGoal() {
+  if (!missionHazardChecked || missionReachShelterDone) return null;
+  if (!missionCheckpointDone) return checkpointPosition;
+  if (!missionHelpNpcDone) return npcHelper.position;
+  return shelterApproachPoint();
+}
+
+function currentMissionGoalKey() {
+  if (!missionHazardChecked) return 'hazard';
+  if (!missionCheckpointDone) return 'checkpoint';
+  if (!missionHelpNpcDone) return 'helper';
+  if (!missionReachShelterDone) return 'shelter';
+  return 'complete';
+}
+
+function shelterApproachPoint() {
+  const c = missionShelter.collider;
+  const x = (c.minX + c.maxX) / 2;
+  const z = c.maxZ + tileSize * 3;
+  return { x, z };
+}
+
+function routeNodeWorld(gridX, gridZ) {
+  const blockX = THREE.MathUtils.clamp(gridX * SAFE_ROUTE_GRID_BLOCKS, 1, tilesWide - 2);
+  const blockZ = THREE.MathUtils.clamp(gridZ * SAFE_ROUTE_GRID_BLOCKS, 1, tilesDeep - 2);
+  return { x: worldXFromBlock(blockX), z: worldZFromBlock(blockZ), blockX, blockZ };
+}
+
+function routeNodeWalkable(gridX, gridZ) {
+  const node = routeNodeWorld(gridX, gridZ);
+  return canMoveToPosition(node.x, node.z);
+}
+
+function closestWalkableRouteNode(worldX, worldZ) {
+  const baseX = Math.round(blockXFromWorld(worldX) / SAFE_ROUTE_GRID_BLOCKS);
+  const baseZ = Math.round(blockZFromWorld(worldZ) / SAFE_ROUTE_GRID_BLOCKS);
+  for (let radius = 0; radius <= 5; radius++) {
+    for (let dz = -radius; dz <= radius; dz++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (radius > 0 && Math.abs(dx) !== radius && Math.abs(dz) !== radius) continue;
+        const gridX = baseX + dx;
+        const gridZ = baseZ + dz;
+        if (gridX < 0 || gridZ < 0 || gridX * SAFE_ROUTE_GRID_BLOCKS >= tilesWide || gridZ * SAFE_ROUTE_GRID_BLOCKS >= tilesDeep) continue;
+        if (routeNodeWalkable(gridX, gridZ)) return { gridX, gridZ };
+      }
+    }
+  }
+  return null;
+}
+
+function routeNodeCost(from, to) {
+  const fromWorld = routeNodeWorld(from.gridX, from.gridZ);
+  const toWorld = routeNodeWorld(to.gridX, to.gridZ);
+  const baseDistance = Math.hypot(toWorld.x - fromWorld.x, toWorld.z - fromWorld.z);
+  const fromHeight = getWalkableHeight(fromWorld.x, fromWorld.z);
+  const toHeight = getWalkableHeight(toWorld.x, toWorld.z);
+  const forecastLevel = Math.min(FLOOD_MAX_LEVEL_METERS, floodWaterLevel + SAFE_ROUTE_FORECAST_RISE_METERS);
+  const predictedDepth = Math.max(0, forecastLevel - toHeight);
+  const floodPenalty = predictedDepth <= 0.15 ? 0 : predictedDepth * predictedDepth * 8;
+  const slopePenalty = Math.abs(toHeight - fromHeight) * 3.5;
+  const roadFactor = isRoadBlock(Math.round(toWorld.blockX), Math.round(toWorld.blockZ)) ? 0.68 : 1;
+  return baseDistance * roadFactor + floodPenalty + slopePenalty;
+}
+
+function routeHeapPush(heap, node) {
+  heap.push(node);
+  let index = heap.length - 1;
+  while (index > 0) {
+    const parent = Math.floor((index - 1) / 2);
+    if (heap[parent].priority <= node.priority) break;
+    heap[index] = heap[parent];
+    index = parent;
+  }
+  heap[index] = node;
+}
+
+function routeHeapPop(heap) {
+  const first = heap[0];
+  const last = heap.pop();
+  if (!heap.length) return first;
+  let index = 0;
+  heap[0] = last;
+  while (true) {
+    const left = index * 2 + 1;
+    const right = left + 1;
+    if (left >= heap.length) break;
+    const child = right < heap.length && heap[right].priority < heap[left].priority ? right : left;
+    if (heap[index].priority <= heap[child].priority) break;
+    [heap[index], heap[child]] = [heap[child], heap[index]];
+    index = child;
+  }
+  return first;
+}
+
+function findSafeRoute(startWorld, goalWorld) {
+  const start = closestWalkableRouteNode(startWorld.x, startWorld.z);
+  const goal = closestWalkableRouteNode(goalWorld.x, goalWorld.z);
+  if (!start || !goal) return [];
+
+  const keyOf = (x, z) => `${x},${z}`;
+  const goalKey = keyOf(goal.gridX, goal.gridZ);
+  const open = [{ ...start, priority: 0 }];
+  const cameFrom = new Map();
+  const costSoFar = new Map([[keyOf(start.gridX, start.gridZ), 0]]);
+  const directions = [
+    [1, 0], [-1, 0], [0, 1], [0, -1],
+    [1, 1], [1, -1], [-1, 1], [-1, -1]
+  ];
+
+  while (open.length) {
+    const current = routeHeapPop(open);
+    const currentKey = keyOf(current.gridX, current.gridZ);
+    if (currentKey === goalKey) break;
+
+    for (const [dx, dz] of directions) {
+      const next = { gridX: current.gridX + dx, gridZ: current.gridZ + dz };
+      if (next.gridX < 0 || next.gridZ < 0 || next.gridX * SAFE_ROUTE_GRID_BLOCKS >= tilesWide || next.gridZ * SAFE_ROUTE_GRID_BLOCKS >= tilesDeep) continue;
+      if (!routeNodeWalkable(next.gridX, next.gridZ)) continue;
+      if (dx && dz && (!routeNodeWalkable(current.gridX + dx, current.gridZ) || !routeNodeWalkable(current.gridX, current.gridZ + dz))) continue;
+
+      const nextKey = keyOf(next.gridX, next.gridZ);
+      const nextCost = costSoFar.get(currentKey) + routeNodeCost(current, next);
+      if (nextCost >= (costSoFar.get(nextKey) ?? Number.POSITIVE_INFINITY)) continue;
+      costSoFar.set(nextKey, nextCost);
+      cameFrom.set(nextKey, currentKey);
+      const heuristic = Math.hypot(goal.gridX - next.gridX, goal.gridZ - next.gridZ) * tileSize * SAFE_ROUTE_GRID_BLOCKS;
+      routeHeapPush(open, { ...next, priority: nextCost + heuristic });
+    }
+  }
+
+  if (!costSoFar.has(goalKey)) return [];
+  const route = [];
+  let cursor = goalKey;
+  while (cursor) {
+    const [gridX, gridZ] = cursor.split(',').map(Number);
+    const point = routeNodeWorld(gridX, gridZ);
+    route.push({ x: point.x, z: point.z });
+    cursor = cameFrom.get(cursor);
+  }
+  route.reverse();
+  route[0] = { x: startWorld.x, z: startWorld.z };
+  route.push({ x: goalWorld.x, z: goalWorld.z });
+  return route;
+}
+
+function renderSafeRoute() {
+  safeRouteArrowGroup.clear();
+  if (safeRoutePoints.length < 2) {
+    minimapSafeRoute.setAttribute('opacity', '0');
+    minimapSafeRoute.setAttribute('points', '');
+    return;
+  }
+
+  const minimapPoints = safeRoutePoints.map((point) => (
+    `${blockXFromWorld(point.x).toFixed(1)},${blockZFromWorld(point.z).toFixed(1)}`
+  ));
+  minimapSafeRoute.setAttribute('points', minimapPoints.join(' '));
+  minimapSafeRoute.setAttribute('opacity', '0.95');
+
+  let distanceSinceArrow = 0;
+  for (let index = 1; index < safeRoutePoints.length; index++) {
+    const previous = safeRoutePoints[index - 1];
+    const point = safeRoutePoints[index];
+    const segmentDistance = Math.hypot(point.x - previous.x, point.z - previous.z);
+    distanceSinceArrow += segmentDistance;
+    if (distanceSinceArrow < 1.5 && index < safeRoutePoints.length - 1) continue;
+    distanceSinceArrow = 0;
+    const arrow = new THREE.Mesh(safeRouteArrowGeometry, safeRouteArrowMaterial);
+    const routeSurfaceY = Math.max(getWalkableHeight(point.x, point.z) + 0.055, floodWaterLevel + 0.045);
+    arrow.position.set(point.x, routeSurfaceY, point.z);
+    arrow.rotation.y = Math.atan2(previous.x - point.x, previous.z - point.z);
+    arrow.renderOrder = 8;
+    safeRouteArrowGroup.add(arrow);
+  }
+}
+
+function updateSafeRoute(dt) {
+  const goal = currentMissionGoal();
+  const goalKey = currentMissionGoalKey();
+  safeRouteRecalculateTimer -= dt;
+  if (!goal) {
+    if (safeRoutePoints.length) {
+      safeRoutePoints = [];
+      renderSafeRoute();
+    }
+    safeRouteGoalKey = goalKey;
+    return;
+  }
+
+  const movedSinceRoute = safeRouteLastStart.distanceTo(new THREE.Vector2(player.position.x, player.position.z));
+  if (goalKey === safeRouteGoalKey && safeRouteRecalculateTimer > 0 && movedSinceRoute < SAFE_ROUTE_RECALCULATE_DISTANCE) return;
+  safeRoutePoints = findSafeRoute(player.position, goal);
+  safeRouteGoalKey = goalKey;
+  safeRouteLastStart.set(player.position.x, player.position.z);
+  safeRouteRecalculateTimer = SAFE_ROUTE_RECALCULATE_SECONDS;
+  renderSafeRoute();
+}
+
+function updateSafeRouteArrowHeights() {
+  safeRouteArrowGroup.children.forEach((arrow) => {
+    arrow.position.y = Math.max(
+      getWalkableHeight(arrow.position.x, arrow.position.z) + 0.055,
+      floodWaterLevel + 0.045
+    );
+  });
+}
+
+function safeRouteDistance() {
+  if (safeRoutePoints.length < 2) return 0;
+  let total = 0;
+  for (let index = 1; index < safeRoutePoints.length; index++) {
+    total += Math.hypot(
+      safeRoutePoints[index].x - safeRoutePoints[index - 1].x,
+      safeRoutePoints[index].z - safeRoutePoints[index - 1].z
+    );
+  }
+  return total;
+}
+// --------------------------------------------------------------------------
+
 let missionHazardChecked = false;
 let missionCheckpointDone = false;
 let missionReachShelterDone = false;
@@ -2349,9 +2608,7 @@ function updateMissionGuidance() {
     return;
   }
 
-  const goal = !missionHazardChecked ? null
-    : !missionCheckpointDone ? checkpointPosition
-      : !missionHelpNpcDone ? npcHelper.position : shelterWorldCenter();
+  const goal = currentMissionGoal();
   if (!goal) {
     guidanceBanner.classList.remove('is-hidden');
     guidanceArrow.textContent = 'H';
@@ -2378,7 +2635,8 @@ function updateMissionGuidance() {
     guidanceArrow.textContent = '⬆';
     // 1 Three.js unit = 1 metre (see mapConfig), so distance is already in
     // metres - no unit conversion needed, just round for display.
-    guidanceDistance.textContent = `${Math.round(distance)}m`;
+    const routeDistance = safeRouteDistance();
+    guidanceDistance.textContent = `${Math.round(routeDistance || distance)}m・安全ルート`;
     guidanceBanner.querySelector('strong').textContent = !missionCheckpointDone
       ? '安全ルートのチェックポイントへ向かおう'
       : !missionHelpNpcDone ? '近くの人に声をかけよう'
@@ -2405,7 +2663,7 @@ function updateMissionGuidance() {
   minimapGoalLine.setAttribute('y1', playerBlockZ.toFixed(2));
   minimapGoalLine.setAttribute('x2', goalBlockX.toFixed(2));
   minimapGoalLine.setAttribute('y2', goalBlockZ.toFixed(2));
-  minimapGoalLine.setAttribute('opacity', missionReachShelterDone ? '0' : '0.85');
+    minimapGoalLine.setAttribute('opacity', missionReachShelterDone ? '0' : '0.85');
 }
 // --------------------------------------------------------------------------
 
@@ -4374,10 +4632,12 @@ function animate(now) {
   updatePlayer(dt);
   updateCamera(dt);
   updateMinimap();
+  updateSafeRoute(dt);
   updateMissionGuidance();
   updateNpcInteraction(dt);
   updateFloodLevel(dt);
   updateFloodDanger(dt);
+  updateSafeRouteArrowHeights();
   updateRiver(now);
   renderer.render(scene, camera);
 
