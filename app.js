@@ -282,6 +282,10 @@ const WEST_EXPANSION_BLOCKS = 7 * mapConfig.cellBlocks;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x83cffa);
 scene.fog = new THREE.Fog(0xbce5f5, 58, 150);
+const clearSkyColor = new THREE.Color(0x83cffa);
+const stormSkyColor = new THREE.Color(0x607d91);
+const clearFogColor = new THREE.Color(0xbce5f5);
+const stormFogColor = new THREE.Color(0x7f9baa);
 
 const camera = new THREE.PerspectiveCamera(54, innerWidth / innerHeight, 0.05, 220);
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -293,7 +297,8 @@ renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.08;
 
-scene.add(new THREE.HemisphereLight(0xe9f8ff, 0x6c8a55, 1.7));
+const skyLight = new THREE.HemisphereLight(0xe9f8ff, 0x6c8a55, 1.7);
+scene.add(skyLight);
 const sun = new THREE.DirectionalLight(0xfff1cf, 2.35);
 sun.position.set(-32, 48, 24);
 sun.castShadow = true;
@@ -312,6 +317,32 @@ flashlightLight.castShadow = false;
 flashlightLight.target = flashlightTarget;
 scene.add(flashlightLight, flashlightTarget);
 const flashlightDirection = new THREE.Vector3();
+
+// Rain uses line segments instead of point sprites so each drop reads as a
+// short streak while keeping the geometry inexpensive enough for mobile.
+const RAIN_DROP_COUNT = 680;
+const rainPositions = new Float32Array(RAIN_DROP_COUNT * 2 * 3);
+const rainDropData = Array.from({ length: RAIN_DROP_COUNT }, () => ({
+  x: (Math.random() - 0.5) * 42,
+  y: Math.random() * 18,
+  z: (Math.random() - 0.5) * 42,
+  speed: 10 + Math.random() * 7
+}));
+const rainGeometry = new THREE.BufferGeometry();
+rainGeometry.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
+const rainMaterial = new THREE.LineBasicMaterial({
+  color: 0xcfefff,
+  transparent: true,
+  opacity: 0.48,
+  depthWrite: false
+});
+const rainStreaks = new THREE.LineSegments(rainGeometry, rainMaterial);
+rainStreaks.name = 'ScenarioRain';
+rainStreaks.frustumCulled = false;
+rainStreaks.renderOrder = 6;
+rainGeometry.setDrawRange(0, 0);
+scene.add(rainStreaks);
+let weatherIntensity = 0;
 
 function canvasTexture(draw, size = 128) {
   const surface = document.createElement('canvas');
@@ -2948,6 +2979,65 @@ function updateFloodLevel(dt) {
     : floodWaterLevel >= maxLevel ? '最高水位に到達' : '上昇中';
 }
 
+function scenarioRainBaseIntensity() {
+  if (activeScenario.id === 'beginner') return 0.3;
+  if (activeScenario.id === 'rapid') return 0.78;
+  return 0.52;
+}
+
+function resetRainDrop(drop) {
+  drop.x = player.position.x + (Math.random() - 0.5) * 42;
+  drop.y = player.position.y + 8 + Math.random() * 12;
+  drop.z = player.position.z + (Math.random() - 0.5) * 42;
+  drop.speed = 10 + Math.random() * 7;
+}
+
+function updateWeather(dt) {
+  const floodProgress = activeScenario.flood.maxLevelMeters > 0
+    ? floodWaterLevel / activeScenario.flood.maxLevelMeters
+    : 0;
+  const targetIntensity = characterChosen
+    ? Math.min(1, scenarioRainBaseIntensity() + floodProgress * 0.22)
+    : 0;
+  weatherIntensity = THREE.MathUtils.lerp(
+    weatherIntensity,
+    targetIntensity,
+    1 - Math.exp(-1.3 * dt)
+  );
+
+  const visibleDrops = Math.floor(RAIN_DROP_COUNT * weatherIntensity);
+  rainGeometry.setDrawRange(0, visibleDrops * 2);
+  rainMaterial.opacity = 0.3 + weatherIntensity * 0.32;
+  for (let index = 0; index < visibleDrops; index++) {
+    const drop = rainDropData[index];
+    drop.y -= drop.speed * dt;
+    drop.x += 1.15 * dt;
+    drop.z += 0.3 * dt;
+    if (
+      drop.y < player.position.y - 1
+      || Math.abs(drop.x - player.position.x) > 23
+      || Math.abs(drop.z - player.position.z) > 23
+    ) resetRainDrop(drop);
+
+    const offset = index * 6;
+    rainPositions[offset] = drop.x;
+    rainPositions[offset + 1] = drop.y;
+    rainPositions[offset + 2] = drop.z;
+    rainPositions[offset + 3] = drop.x - 0.035;
+    rainPositions[offset + 4] = drop.y - 0.42;
+    rainPositions[offset + 5] = drop.z - 0.01;
+  }
+  rainGeometry.attributes.position.needsUpdate = true;
+
+  const stormAmount = weatherIntensity * 0.78;
+  scene.background.lerpColors(clearSkyColor, stormSkyColor, stormAmount);
+  scene.fog.color.lerpColors(clearFogColor, stormFogColor, stormAmount);
+  scene.fog.near = THREE.MathUtils.lerp(58, 42, stormAmount);
+  scene.fog.far = THREE.MathUtils.lerp(150, 105, stormAmount);
+  sun.intensity = THREE.MathUtils.lerp(2.35, 1.3, stormAmount);
+  skyLight.intensity = THREE.MathUtils.lerp(1.7, 1.15, stormAmount);
+}
+
 floodToggle.addEventListener('change', () => {
   floodRisingEnabled = floodToggle.checked;
 });
@@ -5242,6 +5332,7 @@ function animate(now) {
     updateMissionGuidance();
     updateNpcInteraction(dt);
     updateFloodLevel(dt);
+    updateWeather(dt);
     updateFloodDanger(dt);
     updateSafeRouteArrowHeights();
     updateTrainingStatus(now);
