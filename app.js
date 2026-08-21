@@ -37,6 +37,7 @@ const minimapRoads = document.querySelector('#minimapRoads');
 const minimapRiver = document.querySelector('#minimapRiver');
 const minimapHouse = document.querySelector('#minimapHouse');
 const minimapAdditionalHouses = document.querySelector('#minimapAdditionalHouses');
+const minimapNpcMarkers = document.querySelector('#minimapNpcMarkers');
 const minimapPlayer = document.querySelector('#minimapPlayer');
 const minimapSizeLabel = document.querySelector('#minimapSizeLabel');
 const minimapGoal = document.querySelector('#minimapGoal');
@@ -3285,6 +3286,50 @@ const NPC_HELPER_CONFIGS = [
   { id: 'child', label: '子ども', type: 'rain', blockX: 177, blockZ: 142, scale: 0.72, followSpeed: 2.55 },
   { id: 'resident', label: '近隣住民', type: 'rescue', blockX: 177, blockZ: 129, scale: 0.96, followSpeed: 2.8 }
 ];
+
+function makeNpcStatusMarker(label) {
+  const surface = document.createElement('canvas');
+  surface.width = 384;
+  surface.height = 96;
+  const context = surface.getContext('2d');
+  const texture = new THREE.CanvasTexture(surface);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearFilter;
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.name = `NpcStatus-${label}`;
+  sprite.center.set(0.5, 0);
+  sprite.scale.set(1.8, 0.46, 1);
+  sprite.renderOrder = 20;
+  sprite.visible = false;
+
+  function render(rescued) {
+    context.clearRect(0, 0, surface.width, surface.height);
+    context.fillStyle = rescued ? 'rgba(18, 116, 64, .94)' : 'rgba(147, 82, 8, .94)';
+    context.strokeStyle = rescued ? '#79f39f' : '#ffd469';
+    context.lineWidth = 6;
+    context.beginPath();
+    context.roundRect(4, 4, 376, 88, 18);
+    context.fill();
+    context.stroke();
+    context.fillStyle = '#ffffff';
+    context.font = '700 34px sans-serif';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(`${rescued ? '同行中' : '救助待ち'}  ${label}`, 192, 49);
+    texture.needsUpdate = true;
+  }
+
+  render(false);
+  scene.add(sprite);
+  return { sprite, render };
+}
+
 const npcHelpers = NPC_HELPER_CONFIGS.map((config, index) => {
   const group = makePlayer(config.type);
   group.name = `NpcHelper-${config.id}`;
@@ -3296,8 +3341,16 @@ const npcHelpers = NPC_HELPER_CONFIGS.map((config, index) => {
   );
   group.rotation.y = Math.PI;
   scene.add(group);
-  return { ...config, group, rescued: false, rescuedOrder: -1, walkTime: index * 1.7 };
+  const marker = makeNpcStatusMarker(config.label);
+  return { ...config, group, marker, rescued: false, rescuedOrder: -1, walkTime: index * 1.7 };
 });
+
+minimapNpcMarkers.innerHTML = npcHelpers.map((npc) => `
+  <g id="minimap-npc-${npc.id}" filter="url(#markerShadow)">
+    <circle r="3.15" fill="#f4a62a" stroke="#ffffff" stroke-width="1.15"/>
+    <text y="1.35" text-anchor="middle" fill="#ffffff" font-size="3.8" font-weight="900">!</text>
+  </g>
+`).join('');
 
 const NPC_HELP_RADIUS_METERS = 1.4;
 const NPC_FOLLOW_DISTANCE_METERS = 1.3;
@@ -3366,6 +3419,7 @@ function tryHelpNpc() {
   }
   npc.rescued = true;
   npc.rescuedOrder = rescuedPeopleTotal() - 1;
+  npc.marker.render(true);
   missionHelpNpcDone = rescuedPeopleTotal() === npcHelpers.length;
   missionHelpNpc.classList.toggle('is-done', missionHelpNpcDone);
   setInteractionPrompt(false);
@@ -3390,6 +3444,15 @@ function tryHelpNpc() {
 
 function updateNpcInteraction(dt) {
   if (!characterChosen) return;
+
+  npcHelpers.forEach((npc) => {
+    npc.marker.sprite.position.set(
+      npc.group.position.x,
+      npc.group.position.y + 1.35 * npc.scale,
+      npc.group.position.z
+    );
+    npc.marker.sprite.visible = !missionReachShelterDone && npcDistanceFromPlayer(npc) < 42;
+  });
 
   const nearbyNpc = nearestUnrescuedNpc();
   if (nearbyNpc) {
@@ -4839,6 +4902,16 @@ function updateMinimap() {
     'transform',
     `translate(${centerX.toFixed(2)} ${centerY.toFixed(2)}) rotate(${playerRotation.toFixed(1)})`
   );
+  npcHelpers.forEach((npc) => {
+    const marker = document.querySelector(`#minimap-npc-${npc.id}`);
+    marker.setAttribute(
+      'transform',
+      `translate(${blockXFromWorld(npc.group.position.x).toFixed(2)} ${blockZFromWorld(npc.group.position.z).toFixed(2)})`
+    );
+    marker.querySelector('circle').setAttribute('fill', npc.rescued ? '#35c96b' : '#f4a62a');
+    marker.querySelector('text').textContent = npc.rescued ? '✓' : '!';
+    marker.setAttribute('opacity', missionReachShelterDone ? '0' : '1');
+  });
 }
 
 function updateRiver(now) {

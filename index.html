@@ -125,6 +125,7 @@
         <path id="minimapRiver" d="" fill="#1f91d1" opacity=".86"/>
         <g class="minimap-house" id="minimapHouse" transform="translate(60 107.5)"></g>
         <g id="minimapAdditionalHouses"></g>
+        <g id="minimapNpcMarkers"></g>
         <polyline id="minimapSafeRoute" points="" fill="none" stroke="#53f57d" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity="0" />
         <line id="minimapGoalLine" x1="0" y1="0" x2="0" y2="0" stroke="#d8ffe1" stroke-width=".7" stroke-dasharray="1.4 1.6" opacity="0" />
         <g class="minimap-goal" id="minimapGoal" opacity="0">
@@ -137,7 +138,11 @@
         <path d="M0-3.2L2.6 2.7 0 1.5-2.6 2.7Z" fill="#168be0" stroke="#0b568e" stroke-width=".65"/>
       </g>
     </svg>
-    <footer><span><i class="player-key"></i>現在地</span><span id="minimapSizeLabel">105 × 120 blocks</span></footer>
+    <footer>
+      <span><i class="player-key"></i>現在地</span>
+      <span><i class="npc-key"></i>救助対象</span>
+      <span id="minimapSizeLabel">105 × 120 blocks</span>
+    </footer>
     <div class="hazard-legend is-hidden" id="hazardLegend">
       <span><i class="hazard-swatch hazard-swatch-severe"></i>深い浸水想定</span>
       <span><i class="hazard-swatch hazard-swatch-moderate"></i>浸水想定</span>
