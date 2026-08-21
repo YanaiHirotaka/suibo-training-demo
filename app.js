@@ -34,6 +34,8 @@ const pauseToggle = document.querySelector('#pauseToggle');
 const pauseMenu = document.querySelector('#pauseMenu');
 const pauseResume = document.querySelector('#pauseResume');
 const soundToggle = document.querySelector('#soundToggle');
+const appInstallButton = document.querySelector('#appInstallButton');
+const appInstallHelp = document.querySelector('#appInstallHelp');
 const touchControls = document.querySelector('#touchControls');
 const touchTutorial = document.querySelector('#touchTutorial');
 const touchTutorialStep = document.querySelector('#touchTutorialStep');
@@ -259,6 +261,53 @@ soundToggle.addEventListener('click', () => {
   ensureAudio();
   setAudioEnabled(!audioEnabled);
 });
+
+let deferredInstallPrompt = null;
+
+function isInstalledApp() {
+  return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+}
+
+function updateInstallButton() {
+  const canShowInstructions = matchMedia('(hover: none) and (pointer: coarse)').matches;
+  const shouldShow = !isInstalledApp() && (deferredInstallPrompt || canShowInstructions);
+  appInstallButton.classList.toggle('is-hidden', !shouldShow);
+  appInstallButton.textContent = deferredInstallPrompt
+    ? '📲 ホーム画面に追加'
+    : '📲 ホーム画面への追加方法';
+}
+
+addEventListener('beforeinstallprompt', (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  updateInstallButton();
+});
+
+addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  appInstallButton.classList.add('is-hidden');
+  appInstallHelp.textContent = 'ホーム画面への追加が完了しました。次回からアプリとして起動できます。';
+  appInstallHelp.classList.remove('is-hidden');
+});
+
+appInstallButton.addEventListener('click', async () => {
+  if (!deferredInstallPrompt) {
+    appInstallHelp.textContent = 'ブラウザの共有メニューを開き、「ホーム画面に追加」を選択してください。';
+    appInstallHelp.classList.remove('is-hidden');
+    return;
+  }
+
+  deferredInstallPrompt.prompt();
+  const { outcome } = await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  appInstallHelp.textContent = outcome === 'accepted'
+    ? '追加処理を開始しました。ホーム画面をご確認ください。'
+    : '追加はキャンセルされました。必要なときにもう一度お試しください。';
+  appInstallHelp.classList.remove('is-hidden');
+  updateInstallButton();
+});
+
+updateInstallButton();
 
 function renderEmergencyItems() {
   emergencyItemOptions.innerHTML = EMERGENCY_ITEMS.map((item) => `
