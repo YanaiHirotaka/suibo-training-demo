@@ -2375,14 +2375,14 @@ let safeRouteRecalculateTimer = 0;
 function currentMissionGoal() {
   if (!missionHazardChecked || missionReachShelterDone) return null;
   if (!missionCheckpointDone) return checkpointPosition;
-  if (!missionHelpNpcDone) return npcHelper.position;
+  if (!missionHelpNpcDone) return nextNpcToHelp()?.group.position || shelterApproachPoint();
   return shelterApproachPoint();
 }
 
 function currentMissionGoalKey() {
   if (!missionHazardChecked) return 'hazard';
   if (!missionCheckpointDone) return 'checkpoint';
-  if (!missionHelpNpcDone) return 'helper';
+  if (!missionHelpNpcDone) return `helper:${nextNpcToHelp()?.id || 'none'}`;
   if (!missionReachShelterDone) return 'shelter';
   return 'complete';
 }
@@ -2716,7 +2716,7 @@ function updateMissionGuidance() {
     guidanceDistance.textContent = `${Math.round(routeDistance || distance)}m・安全ルート`;
     guidanceBanner.querySelector('strong').textContent = !missionCheckpointDone
       ? '安全ルートのチェックポイントへ向かおう'
-      : !missionHelpNpcDone ? '近くの人に声をかけよう'
+      : !missionHelpNpcDone ? `${nextNpcToHelp()?.label || '近くの人'}に声をかけよう`
         : '避難所へ向かおう';
     // Arrow is screen-relative, not world-relative: 0deg (pointing up) means
     // "the shelter is directly ahead of the camera view". Project the
@@ -3274,38 +3274,35 @@ function updateTrainingStatus(now) {
 
   trainingTimeRemaining.textContent = formatRemainingTime(remainingSeconds);
   trainingTimeState.textContent = expired ? '避難猶予を超過' : warning ? '避難を急いで' : '避難猶予';
-  rescuedPeopleCount.textContent = `${missionHelpNpcDone ? 1 : 0}/1`;
+  rescuedPeopleCount.textContent = `${rescuedPeopleTotal()}/${npcHelpers.length}`;
   trainingStatusPanel.classList.toggle('is-warning', warning);
   trainingStatusPanel.classList.toggle('is-expired', expired);
 }
 
-// --- Helper NPC ("近くの人に声をかけて助け合おう") --------------------------
-// A stationary character along the route from the start house toward the
-// shelter. Reuses the player model builder (rescue-worker look) but is just
-// added to the scene directly - no controls, no walk animation, it just
-// stands there until the player walks up to it.
-const npcHelper = makePlayer('rescue');
-npcHelper.name = 'NpcHelper';
-const NPC_HELPER_BLOCK_X = 177;
-const NPC_HELPER_BLOCK_Z = 155;
-npcHelper.position.set(
-  worldXFromBlock(NPC_HELPER_BLOCK_X),
-  getTerrainHeightBlocks(NPC_HELPER_BLOCK_X, NPC_HELPER_BLOCK_Z) * tileSize,
-  worldZFromBlock(NPC_HELPER_BLOCK_Z)
-);
-npcHelper.rotation.y = Math.PI; // face back down the road, toward the start house
-scene.add(npcHelper);
+// --- Rescue NPCs ("近くの人に声をかけて助け合おう") -------------------------
+const NPC_HELPER_CONFIGS = [
+  { id: 'elderly', label: '高齢者', type: 'rescue', blockX: 177, blockZ: 155, scale: 0.9, followSpeed: 2.25 },
+  { id: 'child', label: '子ども', type: 'rain', blockX: 177, blockZ: 142, scale: 0.72, followSpeed: 2.55 },
+  { id: 'resident', label: '近隣住民', type: 'rescue', blockX: 177, blockZ: 129, scale: 0.96, followSpeed: 2.8 }
+];
+const npcHelpers = NPC_HELPER_CONFIGS.map((config, index) => {
+  const group = makePlayer(config.type);
+  group.name = `NpcHelper-${config.id}`;
+  group.scale.setScalar(config.scale);
+  group.position.set(
+    worldXFromBlock(config.blockX),
+    getTerrainHeightBlocks(config.blockX, config.blockZ) * tileSize,
+    worldZFromBlock(config.blockZ)
+  );
+  group.rotation.y = Math.PI;
+  scene.add(group);
+  return { ...config, group, rescued: false, rescuedOrder: -1, walkTime: index * 1.7 };
+});
 
 const NPC_HELP_RADIUS_METERS = 1.4;
-// Once helped, the NPC follows the player at a fixed speed (a bit slower
-// than the player's walk speed, so it trails naturally) and stops closing in
-// once it's within FOLLOW_DISTANCE - it doesn't try to match sprinting, so
-// running far ahead will leave it behind, same as it would in real life.
-const NPC_FOLLOW_SPEED = 2.9;
 const NPC_FOLLOW_DISTANCE_METERS = 1.3;
 let missionHelpNpcDone = false;
 let npcToastTimeoutId = null;
-let npcWalkTime = 0;
 let trainingAdviceTimeoutId = null;
 let trainingCoachTimer = 0;
 const trainingAdviceLastShown = new Map();
@@ -3339,65 +3336,103 @@ function setInteractionPrompt(visible, text = '声をかける') {
   interactionPrompt.classList.toggle('is-hidden', !visible);
 }
 
-function npcDistanceFromPlayer() {
+function rescuedPeopleTotal() {
+  return npcHelpers.filter((npc) => npc.rescued).length;
+}
+
+function nextNpcToHelp() {
+  return npcHelpers.find((npc) => !npc.rescued) || null;
+}
+
+function npcDistanceFromPlayer(npc) {
   return Math.hypot(
-    npcHelper.position.x - player.position.x,
-    npcHelper.position.z - player.position.z
+    npc.group.position.x - player.position.x,
+    npc.group.position.z - player.position.z
   );
 }
 
+function nearestUnrescuedNpc() {
+  return npcHelpers
+    .filter((npc) => !npc.rescued)
+    .sort((a, b) => npcDistanceFromPlayer(a) - npcDistanceFromPlayer(b))[0] || null;
+}
+
 function tryHelpNpc() {
-  if (!characterChosen || missionHelpNpcDone || npcDistanceFromPlayer() > NPC_HELP_RADIUS_METERS) return;
+  const npc = nearestUnrescuedNpc();
+  if (!characterChosen || !npc || npcDistanceFromPlayer(npc) > NPC_HELP_RADIUS_METERS) return;
   if (!missionHazardChecked || !missionCheckpointDone) {
     showNpcToast('先にハザードマップを確認し、安全ルートのチェックポイントへ向かいましょう。', 3200);
     return;
   }
-  missionHelpNpcDone = true;
-  missionHelpNpc.classList.add('is-done');
+  npc.rescued = true;
+  npc.rescuedOrder = rescuedPeopleTotal() - 1;
+  missionHelpNpcDone = rescuedPeopleTotal() === npcHelpers.length;
+  missionHelpNpc.classList.toggle('is-done', missionHelpNpcDone);
   setInteractionPrompt(false);
-  showNpcToast('声をかけて安全を確認しました。一緒に避難所へ向かいましょう。', 3200);
-  showTrainingAdvice('helped-person', '一緒に避難するとき', '相手の歩く速さに合わせ、離れすぎないように避難所まで誘導しましょう。', 'info', 6500, 0);
+  const progress = `${rescuedPeopleTotal()}/${npcHelpers.length}`;
+  const nextNpc = nextNpcToHelp();
+  showNpcToast(
+    nextNpc
+      ? `${npc.label}に声をかけました（${progress}）。次の人の安全も確認しましょう。`
+      : `3人全員の安全を確認しました。一緒に避難所へ向かいましょう。`,
+    3600
+  );
+  showTrainingAdvice(
+    `helped-person-${npc.id}`,
+    `${npc.label}と一緒に避難`,
+    nextNpc
+      ? '相手の歩く速さに合わせながら、次の人にも声をかけましょう。'
+      : '全員が離れていないか確認しながら、避難所まで誘導しましょう。',
+    'info', 6500, 0
+  );
   updateMissionProgress();
 }
 
 function updateNpcInteraction(dt) {
   if (!characterChosen) return;
 
-  if (!missionHelpNpcDone) {
-    const inRange = npcDistanceFromPlayer() <= NPC_HELP_RADIUS_METERS;
+  const nearbyNpc = nearestUnrescuedNpc();
+  if (nearbyNpc) {
+    const inRange = npcDistanceFromPlayer(nearbyNpc) <= NPC_HELP_RADIUS_METERS;
     const canHelp = missionHazardChecked && missionCheckpointDone;
-    setInteractionPrompt(inRange, canHelp ? '声をかける' : '先に安全ルートを確認しよう');
-    return;
+    setInteractionPrompt(inRange, canHelp ? `${nearbyNpc.label}に声をかける` : '先に安全ルートを確認しよう');
+  } else {
+    setInteractionPrompt(false);
   }
 
-  setInteractionPrompt(false);
+  const rescuedNpcHelpers = npcHelpers
+    .filter((npc) => npc.rescued)
+    .sort((a, b) => a.rescuedOrder - b.rescuedOrder);
+  rescuedNpcHelpers.forEach((npc, index) => {
+    const target = index === 0 ? player : rescuedNpcHelpers[index - 1].group;
+    const followDistance = NPC_FOLLOW_DISTANCE_METERS + index * 0.18;
+    const dx = target.position.x - npc.group.position.x;
+    const dz = target.position.z - npc.group.position.z;
+    const distance = Math.hypot(dx, dz);
+    const moving = distance > followDistance;
 
-  const dx = player.position.x - npcHelper.position.x;
-  const dz = player.position.z - npcHelper.position.z;
-  const distance = Math.hypot(dx, dz);
-  const moving = distance > NPC_FOLLOW_DISTANCE_METERS;
+    if (moving) {
+      const moveAmount = Math.min(npc.followSpeed * dt, distance - followDistance);
+      npc.group.position.x += (dx / distance) * moveAmount;
+      npc.group.position.z += (dz / distance) * moveAmount;
+      const targetAngle = Math.atan2(-dx, -dz);
+      const angleDelta = Math.atan2(
+        Math.sin(targetAngle - npc.group.rotation.y),
+        Math.cos(targetAngle - npc.group.rotation.y)
+      );
+      npc.group.rotation.y += angleDelta * (1 - Math.exp(-14 * dt));
+      npc.walkTime += dt * 9;
+    }
+    npc.group.position.y = getWalkableHeight(npc.group.position.x, npc.group.position.z);
 
-  if (moving) {
-    const moveAmount = Math.min(NPC_FOLLOW_SPEED * dt, distance - NPC_FOLLOW_DISTANCE_METERS);
-    npcHelper.position.x += (dx / distance) * moveAmount;
-    npcHelper.position.z += (dz / distance) * moveAmount;
-    const targetAngle = Math.atan2(-dx, -dz);
-    const angleDelta = Math.atan2(
-      Math.sin(targetAngle - npcHelper.rotation.y),
-      Math.cos(targetAngle - npcHelper.rotation.y)
-    );
-    npcHelper.rotation.y += angleDelta * (1 - Math.exp(-14 * dt));
-    npcWalkTime += dt * 9;
-  }
-  npcHelper.position.y = getWalkableHeight(npcHelper.position.x, npcHelper.position.z);
-
-  const swing = moving ? Math.sin(npcWalkTime) * 0.72 : 0;
-  const parts = npcHelper.userData;
-  parts.leftArm.rotation.x = THREE.MathUtils.lerp(parts.leftArm.rotation.x, swing, 12 * dt);
-  parts.rightArm.rotation.x = THREE.MathUtils.lerp(parts.rightArm.rotation.x, -swing, 12 * dt);
-  parts.leftLeg.rotation.x = THREE.MathUtils.lerp(parts.leftLeg.rotation.x, -swing, 12 * dt);
-  parts.rightLeg.rotation.x = THREE.MathUtils.lerp(parts.rightLeg.rotation.x, swing, 12 * dt);
-  parts.visual.position.y = moving ? Math.abs(Math.sin(npcWalkTime * 2)) * 0.025 : 0;
+    const swing = moving ? Math.sin(npc.walkTime) * 0.72 : 0;
+    const parts = npc.group.userData;
+    parts.leftArm.rotation.x = THREE.MathUtils.lerp(parts.leftArm.rotation.x, swing, 12 * dt);
+    parts.rightArm.rotation.x = THREE.MathUtils.lerp(parts.rightArm.rotation.x, -swing, 12 * dt);
+    parts.leftLeg.rotation.x = THREE.MathUtils.lerp(parts.leftLeg.rotation.x, -swing, 12 * dt);
+    parts.rightLeg.rotation.x = THREE.MathUtils.lerp(parts.rightLeg.rotation.x, swing, 12 * dt);
+    parts.visual.position.y = moving ? Math.abs(Math.sin(npc.walkTime * 2)) * 0.025 : 0;
+  });
 }
 // --------------------------------------------------------------------------
 
@@ -3459,7 +3494,7 @@ function trainingResult() {
     6000
     + 1000
     + 1000
-    + (missionHelpNpcDone ? 1500 : 0)
+    + (rescuedPeopleTotal() / npcHelpers.length) * 1500
     + routeRate * 2500
     + Math.min(1800, remainingSeconds * 10)
     + (playerHealth / PLAYER_MAX_HEALTH) * 1000
@@ -3501,7 +3536,7 @@ function checkTrainingComplete() {
   statScore.textContent = result.score.toLocaleString('ja-JP');
   statScenario.textContent = activeScenario.name;
   statElapsedTime.textContent = formatElapsedTime(trainingFinishTime - trainingStartTime);
-  statRescuedPeople.textContent = missionHelpNpcDone ? '1/1人' : '0/1人';
+  statRescuedPeople.textContent = `${rescuedPeopleTotal()}/${npcHelpers.length}人`;
   statSafeRoute.textContent = `${Math.round(result.routeRate * 100)}%`;
   statDangerTime.textContent = `${dangerExposureSeconds.toFixed(1)}秒`;
   statHealth.textContent = `${Math.ceil(playerHealth)}/${PLAYER_MAX_HEALTH}`;
