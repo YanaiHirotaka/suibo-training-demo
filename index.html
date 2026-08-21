@@ -110,6 +110,37 @@
     <div class="inventory-slots" id="inventorySlots"></div>
   </aside>
 
+  <button class="pause-toggle is-hidden" id="pauseToggle" type="button">☰ メニュー <kbd>Esc</kbd></button>
+
+  <div class="pause-menu is-hidden" id="pauseMenu" role="dialog" aria-modal="true" aria-labelledby="pauseMenuTitle">
+    <div class="pause-menu-panel">
+      <span class="pause-menu-badge">訓練一時停止中</span>
+      <h2 id="pauseMenuTitle">操作と安全行動を確認</h2>
+      <div class="pause-help-grid">
+        <section>
+          <h3>操作方法</h3>
+          <dl>
+            <div><dt>WASD</dt><dd>移動</dd></div>
+            <div><dt>Shift</dt><dd>安全な場所で走る</dd></div>
+            <div><dt>Space</dt><dd>ジャンプ</dd></div>
+            <div><dt>E</dt><dd>近くの人に声をかける</dd></div>
+            <div><dt>1〜4</dt><dd>持ちものを使う</dd></div>
+          </dl>
+        </section>
+        <section>
+          <h3>避難のポイント</h3>
+          <ul>
+            <li>ハザードマップで浸水区域を確認する</li>
+            <li>川沿い・低い道路・アンダーパスを避ける</li>
+            <li>同行者と離れず、早めに高い場所へ向かう</li>
+          </ul>
+        </section>
+      </div>
+      <button id="pauseResume" type="button">訓練を再開する</button>
+      <small>Escキーでも再開できます</small>
+    </div>
+  </div>
+
   <aside class="minimap-panel" aria-label="フィールド全体ミニマップ">
     <header>
       <span>ミニマップ</span>

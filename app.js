@@ -29,6 +29,9 @@ const emergencyItemOptions = document.querySelector('#emergencyItemOptions');
 const emergencyItemStatus = document.querySelector('#emergencyItemStatus');
 const inventoryBar = document.querySelector('#inventoryBar');
 const inventorySlots = document.querySelector('#inventorySlots');
+const pauseToggle = document.querySelector('#pauseToggle');
+const pauseMenu = document.querySelector('#pauseMenu');
+const pauseResume = document.querySelector('#pauseResume');
 const minimapMap = document.querySelector('#minimapMap');
 const minimapContent = document.querySelector('#minimapContent');
 const minimapFrame = document.querySelector('#minimapFrame');
@@ -103,6 +106,8 @@ const EMERGENCY_ITEM_LIMIT = 4;
 const selectedEmergencyItems = new Set();
 const usedEmergencyItems = new Set();
 let flashlightEnabled = false;
+let gamePaused = false;
+let pauseStartedAt = 0;
 
 function renderEmergencyItems() {
   emergencyItemOptions.innerHTML = EMERGENCY_ITEMS.map((item) => `
@@ -3490,7 +3495,7 @@ function refreshHealthDisplay() {
 }
 
 function useEmergencyItem(index) {
-  if (!characterChosen || trainingCompleteShown) return;
+  if (!characterChosen || trainingCompleteShown || gamePaused) return;
   const item = selectedEmergencyItemList()[index];
   if (!item) return;
 
@@ -3817,9 +3822,32 @@ function selectCharacter(type) {
   characterChosen = true;
   characterSelect.classList.add('is-hidden');
   inventoryBar.classList.remove('is-hidden');
+  pauseToggle.classList.remove('is-hidden');
   renderInventory();
   showTrainingAdvice('training-start', '最初にハザードを確認', '右上の「ハザード表示」を押し、浸水想定と安全な方向を確認してから移動しましょう。', 'info', 7000, 0);
 }
+
+function setGamePaused(paused) {
+  if (!characterChosen || trainingCompleteShown || gamePaused === paused) return;
+  gamePaused = paused;
+  pauseMenu.classList.toggle('is-hidden', !paused);
+  pauseToggle.innerHTML = `${paused ? '▶ 再開' : '☰ メニュー'} <kbd>Esc</kbd>`;
+  if (paused) {
+    pauseStartedAt = performance.now();
+    releaseAllKeys();
+    if (document.pointerLockElement) document.exitPointerLock();
+    pauseResume.focus();
+  } else {
+    const pausedDuration = performance.now() - pauseStartedAt;
+    trainingStartTime += pausedDuration;
+    trainingDeadlineTime += pausedDuration;
+    lastTime = performance.now();
+    pauseToggle.focus();
+  }
+}
+
+pauseToggle.addEventListener('click', () => setGamePaused(!gamePaused));
+pauseResume.addEventListener('click', () => setGamePaused(false));
 
 characterCards.forEach((card) => {
   card.addEventListener('click', () => selectCharacter(card.dataset.character));
@@ -3877,7 +3905,14 @@ addEventListener('keydown', (event) => {
     return;
   }
 
+  if (characterChosen && event.code === 'Escape' && !trainingCompleteShown) {
+    event.preventDefault();
+    setGamePaused(!gamePaused);
+    return;
+  }
+
   if (!characterChosen) return;
+  if (gamePaused) return;
 
   const inventoryKey = /^Digit([1-4])$/.exec(event.code);
   if (!editMode && inventoryKey) {
@@ -5137,21 +5172,25 @@ function animate(now) {
   requestAnimationFrame(animate);
   const dt = Math.min(0.04, (now - lastTime) / 1000);
   lastTime = now;
-  applyPaintIfDirty();
-  updatePlayer(dt);
-  updateTrainingMetrics(dt);
-  updateTrainingCoach(dt);
-  updateCamera(dt);
-  updateFlashlight();
-  updateMinimap();
-  updateSafeRoute(dt);
-  updateMissionGuidance();
-  updateNpcInteraction(dt);
-  updateFloodLevel(dt);
-  updateFloodDanger(dt);
-  updateSafeRouteArrowHeights();
-  updateTrainingStatus(now);
-  updateRiver(now);
+  if (!gamePaused) {
+    applyPaintIfDirty();
+    updatePlayer(dt);
+    updateTrainingMetrics(dt);
+    updateTrainingCoach(dt);
+    updateCamera(dt);
+    updateFlashlight();
+    updateMinimap();
+    updateSafeRoute(dt);
+    updateMissionGuidance();
+    updateNpcInteraction(dt);
+    updateFloodLevel(dt);
+    updateFloodDanger(dt);
+    updateSafeRouteArrowHeights();
+    updateTrainingStatus(now);
+    updateRiver(now);
+  } else {
+    updateTrainingStatus(pauseStartedAt);
+  }
   renderer.render(scene, camera);
 
   fpsFrames += 1;
