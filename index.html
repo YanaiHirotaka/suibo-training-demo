@@ -321,10 +321,10 @@
     </div>
   </div>
 
-  <div class="training-complete is-hidden" id="trainingComplete" aria-live="polite">
+  <div class="training-complete is-hidden" id="trainingComplete" aria-live="assertive">
     <div class="training-complete-panel">
-      <h2>訓練完了！</h2>
-      <p class="training-complete-sub">お疲れ様でした。避難行動を無事にやり遂げました。</p>
+      <h2 id="trainingResultTitle">訓練完了！</h2>
+      <p class="training-complete-sub" id="trainingResultSubtitle">お疲れ様でした。避難行動を無事にやり遂げました。</p>
       <p class="training-result-scenario">シナリオ：<strong id="statScenario">標準訓練</strong></p>
       <div class="training-result-score">
         <span class="training-result-rank" id="statRank">A</span>
@@ -344,7 +344,7 @@
         <li><span>危険な状況からの復帰</span><strong id="statRespawns">--</strong></li>
       </ul>
       <div class="training-feedback">
-        <strong>今回の振り返り</strong>
+        <strong id="trainingFeedbackTitle">今回の振り返り</strong>
         <ul id="trainingFeedbackList"></ul>
       </div>
       <button id="trainingRetry" type="button">もう一度訓練する</button>

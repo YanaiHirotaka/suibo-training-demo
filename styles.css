@@ -1349,6 +1349,28 @@ body {
   color: #3ecf6b;
 }
 
+.training-complete.is-failed .training-complete-panel {
+  background: rgba(54, 27, 25, 0.97);
+  border-color: rgba(255, 151, 126, 0.9);
+}
+
+.training-complete.is-failed .training-complete-panel h2 { color: #ff9c82; }
+.training-complete.is-failed .training-result-score {
+  background: linear-gradient(135deg, rgba(211, 73, 57, 0.2), rgba(255, 180, 95, 0.1));
+  border-color: rgba(255, 151, 126, 0.55);
+}
+.training-complete.is-failed .training-result-rank {
+  color: #ffad92;
+  font-size: 24px;
+  text-shadow: none;
+}
+.training-complete.is-failed .training-feedback { border-left-color: #e06752; }
+.training-complete.is-failed .training-complete-panel button {
+  color: white;
+  background: #c74b3d;
+}
+.training-complete.is-failed .training-complete-panel button:hover { background: #dd604f; }
+
 .training-complete-sub {
   margin: 0 0 14px;
   font-size: 12.5px;

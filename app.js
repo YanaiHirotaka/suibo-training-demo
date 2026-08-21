@@ -85,6 +85,9 @@ const trainingAdviceTimer = document.querySelector('.training-advice-timer');
 const npcToast = document.querySelector('#npcToast');
 const npcToastText = document.querySelector('#npcToastText');
 const trainingComplete = document.querySelector('#trainingComplete');
+const trainingResultTitle = document.querySelector('#trainingResultTitle');
+const trainingResultSubtitle = document.querySelector('#trainingResultSubtitle');
+const trainingFeedbackTitle = document.querySelector('#trainingFeedbackTitle');
 const statRank = document.querySelector('#statRank');
 const statScore = document.querySelector('#statScore');
 const statScenario = document.querySelector('#statScenario');
@@ -3582,6 +3585,7 @@ function updateTrainingStatus(now) {
   rescuedPeopleCount.textContent = `${rescuedPeopleTotal()}/${npcHelpers.length}`;
   trainingStatusPanel.classList.toggle('is-warning', warning);
   trainingStatusPanel.classList.toggle('is-expired', expired);
+  if (expired && !trainingCompleteShown) showTrainingFailure();
 }
 
 // --- Rescue NPCs ("近くの人に声をかけて助け合おう") -------------------------
@@ -3968,10 +3972,56 @@ function formatElapsedTime(ms) {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
+function trainingFailureFeedback() {
+  const feedback = [];
+  if (!missionHazardChecked) feedback.push('開始後すぐにハザードマップを開き、安全な方向を確認しましょう。');
+  else if (!missionCheckpointDone) feedback.push('安全ルートの矢印をたどり、判断チェックポイントへ早めに向かいましょう。');
+  if (!missionHelpNpcDone) feedback.push(`救助できたのは${rescuedPeopleTotal()}/${npcHelpers.length}人です。支援が必要な人へ順番に声をかけましょう。`);
+  else if (!missionReachShelterDone) feedback.push('同行者との距離を保ちながら、全員で避難所の入口まで到着しましょう。');
+  feedback.push('警戒レベルが低いうちに行動を始めることが、避難時間の確保につながります。');
+  return feedback;
+}
+
+function showTrainingFailure() {
+  if (trainingCompleteShown) return;
+  trainingCompleteShown = true;
+  trainingFinishTime = performance.now();
+  releaseAllKeys();
+  if (document.pointerLockElement) document.exitPointerLock();
+  pauseMenu.classList.add('is-hidden');
+  pauseToggle.classList.add('is-hidden');
+  trainingComplete.classList.add('is-failed');
+  trainingResultTitle.textContent = '避難猶予を超過しました';
+  trainingResultSubtitle.textContent = '訓練を振り返り、次は警戒レベルが低いうちに避難を始めましょう。';
+  trainingFeedbackTitle.textContent = '次回の改善ポイント';
+  statRank.textContent = '未達';
+  statScore.textContent = '0';
+  statScenario.textContent = activeScenario.name;
+  statElapsedTime.textContent = formatElapsedTime(activeScenario.timeLimitSeconds * 1000);
+  statRescuedPeople.textContent = `${rescuedPeopleTotal()}/${npcHelpers.length}人`;
+  statPreparedItems.textContent = `${recommendedEmergencyItemCount()}/${EMERGENCY_ITEM_LIMIT}品適切`;
+  statDecision.textContent = checkpointDecisionResolved
+    ? checkpointDecisionMistakes === 0 ? '一回で正解' : `${checkpointDecisionMistakes}回再検討`
+    : '未実施';
+  const routeRate = routeSampleCount ? safeRouteSampleCount / routeSampleCount : 0;
+  statSafeRoute.textContent = `${Math.round(routeRate * 100)}%`;
+  statDangerTime.textContent = `${dangerExposureSeconds.toFixed(1)}秒`;
+  statHealth.textContent = `${Math.ceil(playerHealth)}/${PLAYER_MAX_HEALTH}`;
+  statRespawns.textContent = `${respawnCount}回`;
+  trainingFeedbackList.innerHTML = trainingFailureFeedback().map((message) => `<li>${message}</li>`).join('');
+  trainingRetryButton.textContent = '同じ訓練に再挑戦する';
+  trainingComplete.classList.remove('is-hidden');
+  trainingRetryButton.focus();
+}
+
 function checkTrainingComplete() {
   if (trainingCompleteShown || !missionHazardChecked || !missionCheckpointDone || !missionHelpNpcDone || !missionReachShelterDone) return;
   trainingCompleteShown = true;
   trainingFinishTime = performance.now();
+  trainingComplete.classList.remove('is-failed');
+  trainingResultTitle.textContent = '訓練完了！';
+  trainingResultSubtitle.textContent = 'お疲れ様でした。避難行動を無事にやり遂げました。';
+  trainingFeedbackTitle.textContent = '今回の振り返り';
   const result = trainingResult();
   const feedback = trainingFeedback(result);
   statRank.textContent = result.rank;
@@ -5379,7 +5429,7 @@ function animate(now) {
   requestAnimationFrame(animate);
   const dt = Math.min(0.04, (now - lastTime) / 1000);
   lastTime = now;
-  if (!gamePaused) {
+  if (!gamePaused && !trainingCompleteShown) {
     applyPaintIfDirty();
     updatePlayer(dt);
     updateTrainingMetrics(dt);
@@ -5398,7 +5448,7 @@ function animate(now) {
     updateTrainingStatus(now);
     updateRiver(now);
   } else {
-    updateTrainingStatus(pauseStartedAt);
+    updateTrainingStatus(trainingFinishTime || pauseStartedAt);
   }
   renderer.render(scene, camera);
 
