@@ -932,6 +932,7 @@ body {
 }
 
 .touch-controls { display: none; }
+.touch-tutorial { display: none; }
 
 @media (hover: none) and (pointer: coarse) {
   .touch-controls:not(.is-hidden) {
@@ -1000,6 +1001,64 @@ body {
   .touch-actions .touch-jump { width: 68px; height: 68px; }
   .start-guide { display: none; }
   body .edit-panel { display: none; }
+
+  .touch-tutorial:not(.is-hidden) {
+    position: fixed;
+    left: 50%;
+    bottom: 176px;
+    z-index: 7;
+    display: block;
+    width: min(310px, calc(100vw - 32px));
+    padding: 12px 14px;
+    color: white;
+    background: rgba(7, 38, 58, 0.92);
+    border: 2px solid rgba(143, 226, 255, 0.82);
+    border-radius: 13px;
+    box-shadow: 0 10px 28px rgba(3, 20, 32, 0.42);
+    text-align: center;
+    transform: translateX(-50%);
+    backdrop-filter: blur(8px);
+  }
+
+  .touch-tutorial-step {
+    margin-bottom: 3px;
+    color: #8fe2ff;
+    font-size: 9px;
+    font-weight: 900;
+  }
+
+  .touch-tutorial strong { font-size: 14px; }
+
+  .touch-tutorial p {
+    margin: 5px 0 10px;
+    color: #d9eff7;
+    font-size: 10.5px;
+    line-height: 1.45;
+  }
+
+  .touch-tutorial-actions {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .touch-tutorial-actions button {
+    min-width: 86px;
+    padding: 7px 12px;
+    color: white;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 900;
+  }
+
+  .touch-tutorial-actions button:last-child {
+    color: #083526;
+    background: #55dc83;
+    border-color: #9df4b9;
+  }
 }
 
 @media (max-width: 700px) and (orientation: portrait) {

@@ -34,6 +34,12 @@ const pauseMenu = document.querySelector('#pauseMenu');
 const pauseResume = document.querySelector('#pauseResume');
 const soundToggle = document.querySelector('#soundToggle');
 const touchControls = document.querySelector('#touchControls');
+const touchTutorial = document.querySelector('#touchTutorial');
+const touchTutorialStep = document.querySelector('#touchTutorialStep');
+const touchTutorialTitle = document.querySelector('#touchTutorialTitle');
+const touchTutorialText = document.querySelector('#touchTutorialText');
+const touchTutorialNext = document.querySelector('#touchTutorialNext');
+const touchTutorialSkip = document.querySelector('#touchTutorialSkip');
 const checkpointDecision = document.querySelector('#checkpointDecision');
 const checkpointDecisionFeedback = document.querySelector('#checkpointDecisionFeedback');
 const minimapPanel = document.querySelector('#minimapPanel');
@@ -4199,6 +4205,66 @@ trainingRetryButton.addEventListener('click', () => {
 });
 // --------------------------------------------------------------------------
 
+const TOUCH_TUTORIAL_STORAGE_KEY = 'suibo-touch-tutorial-complete-v1';
+const touchTutorialSteps = [
+  {
+    title: '左下のボタンで移動',
+    text: '▲▼◀▶を押し続けると、その方向へ歩きます。'
+  },
+  {
+    title: '画面をスワイプして見回す',
+    text: 'ボタン以外の場所を1本指で動かすと視点を回転できます。2本指のピンチで拡大・縮小できます。'
+  },
+  {
+    title: '右下のボタンで行動',
+    text: '「声かけ」で近くの人を助け、「走る」と「ジャンプ」で安全な場所へ向かいましょう。'
+  }
+];
+let touchTutorialIndex = 0;
+
+function canShowTouchTutorial() {
+  if (!matchMedia('(hover: none) and (pointer: coarse)').matches) return false;
+  try {
+    return localStorage.getItem(TOUCH_TUTORIAL_STORAGE_KEY) !== 'true';
+  } catch {
+    return true;
+  }
+}
+
+function renderTouchTutorial() {
+  const step = touchTutorialSteps[touchTutorialIndex];
+  touchTutorialStep.textContent = `${touchTutorialIndex + 1} / ${touchTutorialSteps.length}`;
+  touchTutorialTitle.textContent = step.title;
+  touchTutorialText.textContent = step.text;
+  touchTutorialNext.textContent = touchTutorialIndex === touchTutorialSteps.length - 1 ? 'はじめる' : '次へ';
+}
+
+function finishTouchTutorial() {
+  touchTutorial.classList.add('is-hidden');
+  try {
+    localStorage.setItem(TOUCH_TUTORIAL_STORAGE_KEY, 'true');
+  } catch {
+    // Private browsing can disable storage; hiding it for this session is enough.
+  }
+}
+
+function startTouchTutorial() {
+  if (!canShowTouchTutorial()) return;
+  touchTutorialIndex = 0;
+  renderTouchTutorial();
+  touchTutorial.classList.remove('is-hidden');
+}
+
+touchTutorialNext.addEventListener('click', () => {
+  if (touchTutorialIndex >= touchTutorialSteps.length - 1) {
+    finishTouchTutorial();
+    return;
+  }
+  touchTutorialIndex += 1;
+  renderTouchTutorial();
+});
+touchTutorialSkip.addEventListener('click', finishTouchTutorial);
+
 function disposeObject(object) {
   object.traverse((obj) => {
     if (obj.geometry) obj.geometry.dispose();
@@ -4234,6 +4300,7 @@ function selectCharacter(type) {
   touchControls.classList.remove('is-hidden');
   pauseToggle.classList.remove('is-hidden');
   renderInventory();
+  startTouchTutorial();
   showTrainingAdvice('training-start', '最初にハザードを確認', '右上の「ハザード表示」を押し、浸水想定と安全な方向を確認してから移動しましょう。', 'info', 7000, 0);
 }
 
