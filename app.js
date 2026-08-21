@@ -2666,13 +2666,33 @@ function shelterArrivalRadius() {
   return (c.maxX - c.minX) / 2 + 3;
 }
 
+function rescuedPeopleOutsideShelter() {
+  if (!missionHelpNpcDone) return npcHelpers.length;
+  const shelter = shelterWorldCenter();
+  const arrivalRadius = shelterArrivalRadius();
+  return npcHelpers.filter((npc) => Math.hypot(
+    npc.group.position.x - shelter.x,
+    npc.group.position.z - shelter.z
+  ) >= arrivalRadius).length;
+}
+
+function allRescuedPeopleAtShelter() {
+  return missionHelpNpcDone && rescuedPeopleOutsideShelter() === 0;
+}
+
 function completeMissionReachShelter() {
-  if (missionReachShelterDone || !missionHazardChecked || !missionCheckpointDone || !missionHelpNpcDone) return;
+  if (
+    missionReachShelterDone
+    || !missionHazardChecked
+    || !missionCheckpointDone
+    || !missionHelpNpcDone
+    || !allRescuedPeopleAtShelter()
+  ) return;
   missionReachShelterDone = true;
   missionReachShelter.classList.add('is-done');
   guidanceArrow.textContent = '✓';
-  guidanceBanner.querySelector('strong').textContent = '避難所に到着しました！';
-  guidanceDistance.textContent = 'ミッション達成';
+  guidanceBanner.querySelector('strong').textContent = '全員で避難所に到着しました！';
+  guidanceDistance.textContent = '全員の安全を確認';
   updateMissionProgress();
   checkTrainingComplete();
 }
@@ -2704,7 +2724,9 @@ function updateMissionGuidance() {
   if (missionHazardChecked && !missionCheckpointDone && distance < 2.2) {
     completeCheckpointMission();
   }
-  if (!missionReachShelterDone && missionHazardChecked && missionCheckpointDone && missionHelpNpcDone && distance < shelterArrivalRadius()) {
+  const playerAtShelter = missionHelpNpcDone && distance < shelterArrivalRadius();
+  const waitingForEscort = playerAtShelter && !allRescuedPeopleAtShelter();
+  if (!missionReachShelterDone && missionHazardChecked && missionCheckpointDone && playerAtShelter && !waitingForEscort) {
     completeMissionReachShelter();
   }
 
@@ -2719,16 +2741,25 @@ function updateMissionGuidance() {
       ? '安全ルートのチェックポイントへ向かおう'
       : !missionHelpNpcDone ? `${nextNpcToHelp()?.label || '近くの人'}に声をかけよう`
         : '避難所へ向かおう';
+    if (waitingForEscort) {
+      const waitingFor = rescuedPeopleOutsideShelter();
+      guidanceArrow.textContent = '…';
+      guidanceArrow.style.transform = 'none';
+      guidanceBanner.querySelector('strong').textContent = '同行者が到着するまで待とう';
+      guidanceDistance.textContent = `あと${waitingFor}人が移動中`;
+    }
     // Arrow is screen-relative, not world-relative: 0deg (pointing up) means
     // "the shelter is directly ahead of the camera view". Project the
     // world-space direction to the goal onto the camera's forward/right
     // axes (same vectors as cameraForward/cameraRight in updatePlayer) and
     // read off the angle - CSS rotate() is clockwise, matching "right" being
     // a positive angle from "up".
-    const forwardComponent = dx * -Math.sin(cameraYaw) + dz * -Math.cos(cameraYaw);
-    const rightComponent = dx * Math.cos(cameraYaw) + dz * -Math.sin(cameraYaw);
-    const arrowDeg = THREE.MathUtils.radToDeg(Math.atan2(rightComponent, forwardComponent));
-    guidanceArrow.style.transform = `rotate(${arrowDeg}deg)`;
+    if (!waitingForEscort) {
+      const forwardComponent = dx * -Math.sin(cameraYaw) + dz * -Math.cos(cameraYaw);
+      const rightComponent = dx * Math.cos(cameraYaw) + dz * -Math.sin(cameraYaw);
+      const arrowDeg = THREE.MathUtils.radToDeg(Math.atan2(rightComponent, forwardComponent));
+      guidanceArrow.style.transform = `rotate(${arrowDeg}deg)`;
+    }
   }
 
   const goalBlockX = THREE.MathUtils.clamp(blockXFromWorld(goal.x), 0, tilesWide);
@@ -3538,6 +3569,18 @@ function updateTrainingCoach(dt) {
   }
   if (floodDepth > 0.45) {
     showTrainingAdvice('flood-entry', '低い場所から浸水します', '水が浅く見えても、今後さらに上昇します。道路の高さと水位計を確認しましょう。', 'warning', 6500, 25000);
+    return;
+  }
+  const separatedNpc = npcHelpers
+    .filter((npc) => npc.rescued)
+    .find((npc) => npcDistanceFromPlayer(npc) > 7);
+  if (separatedNpc && !missionReachShelterDone) {
+    showTrainingAdvice(
+      'escort-separated',
+      `${separatedNpc.label}と離れています`,
+      '立ち止まって同行者を待ち、全員が見える距離を保ちながら避難しましょう。',
+      'warning', 6500, 12000
+    );
     return;
   }
   if (missionHazardChecked && safeRoutePoints.length > 1 && distanceToSafeRoute(player.position.x, player.position.z) > 2.4) {
