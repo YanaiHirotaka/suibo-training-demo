@@ -6,6 +6,10 @@ const guide = document.querySelector('#startGuide');
 const fpsCounter = document.querySelector('#fpsCounter');
 const offlineStatus = document.querySelector('#offlineStatus');
 const characterSelect = document.querySelector('#characterSelect');
+const resumeTraining = document.querySelector('#resumeTraining');
+const resumeTrainingSummary = document.querySelector('#resumeTrainingSummary');
+const resumeTrainingContinue = document.querySelector('#resumeTrainingContinue');
+const resumeTrainingDiscard = document.querySelector('#resumeTrainingDiscard');
 const editToggle = document.querySelector('#editToggle');
 const editTools = document.querySelector('#editTools');
 const brushSizeSelect = document.querySelector('#brushSize');
@@ -3887,7 +3891,9 @@ function showTrainingAdvice(key, title, text, severity = 'info', durationMs = 60
 }
 
 function refreshHealthDisplay() {
-  refreshHealthDisplay();
+  healthBarFill.style.width = `${(playerHealth / PLAYER_MAX_HEALTH) * 100}%`;
+  healthBarFill.classList.toggle('is-low', playerHealth < PLAYER_MAX_HEALTH * 0.3);
+  healthText.textContent = `${Math.ceil(playerHealth)}/${PLAYER_MAX_HEALTH}`;
 }
 
 function useEmergencyItem(index) {
@@ -4179,6 +4185,7 @@ function trainingFailureFeedback() {
 function showTrainingFailure() {
   if (trainingCompleteShown) return;
   trainingCompleteShown = true;
+  clearTrainingProgress();
   setRainAudioLevel(0);
   playToneSequence([
     { frequency: 390, duration: 0.22, volume: 0.13 },
@@ -4220,6 +4227,7 @@ function showTrainingFailure() {
 function checkTrainingComplete() {
   if (trainingCompleteShown || !missionHazardChecked || !missionCheckpointDone || !missionHelpNpcDone || !missionReachShelterDone) return;
   trainingCompleteShown = true;
+  clearTrainingProgress();
   setRainAudioLevel(0);
   playToneSequence([
     { frequency: 523, duration: 0.15 },
@@ -4259,6 +4267,11 @@ trainingRetryButton.addEventListener('click', () => {
 // --------------------------------------------------------------------------
 
 const TOUCH_TUTORIAL_STORAGE_KEY = 'suibo-touch-tutorial-complete-v1';
+const TRAINING_PROGRESS_STORAGE_KEY = 'suibo-training-progress-v1';
+const TRAINING_PROGRESS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+let pendingTrainingProgress = null;
+let nextProgressSaveTime = 0;
+let restoringTrainingProgress = false;
 const touchTutorialSteps = [
   {
     title: '左下のボタンで移動',
@@ -4318,6 +4331,155 @@ touchTutorialNext.addEventListener('click', () => {
 });
 touchTutorialSkip.addEventListener('click', finishTouchTutorial);
 
+function clearTrainingProgress() {
+  pendingTrainingProgress = null;
+  try {
+    localStorage.removeItem(TRAINING_PROGRESS_STORAGE_KEY);
+  } catch {
+    // Storage can be unavailable in private browsing.
+  }
+}
+
+function saveTrainingProgress(now = performance.now()) {
+  if (!characterChosen || trainingCompleteShown) return;
+  const progress = {
+    version: 1,
+    savedAt: Date.now(),
+    scenarioId: activeScenario.id,
+    characterType: currentCharacterType,
+    selectedItems: [...selectedEmergencyItems],
+    usedItems: [...usedEmergencyItems],
+    flashlightEnabled,
+    remainingMs: Math.max(0, trainingDeadlineTime - now),
+    elapsedMs: Math.max(0, now - trainingStartTime),
+    player: {
+      x: player.position.x,
+      y: player.position.y,
+      z: player.position.z,
+      rotationY: player.rotation.y
+    },
+    cameraYaw,
+    cameraPitch,
+    floodWaterLevel,
+    playerHealth,
+    respawnCount,
+    missionHazardChecked,
+    missionCheckpointDone,
+    missionHelpNpcDone,
+    missionReachShelterDone,
+    checkpointDecisionResolved,
+    checkpointDecisionMistakes,
+    routeSampleCount,
+    safeRouteSampleCount,
+    dangerExposureSeconds,
+    npcs: npcHelpers.map((npc) => ({
+      id: npc.id,
+      rescued: npc.rescued,
+      rescuedOrder: npc.rescuedOrder,
+      x: npc.group.position.x,
+      y: npc.group.position.y,
+      z: npc.group.position.z
+    }))
+  };
+  try {
+    localStorage.setItem(TRAINING_PROGRESS_STORAGE_KEY, JSON.stringify(progress));
+  } catch {
+    // The training continues even when storage is full or unavailable.
+  }
+}
+
+function readTrainingProgress() {
+  try {
+    const progress = JSON.parse(localStorage.getItem(TRAINING_PROGRESS_STORAGE_KEY) || 'null');
+    const valid = progress?.version === 1
+      && Date.now() - progress.savedAt < TRAINING_PROGRESS_MAX_AGE_MS
+      && progress.remainingMs > 0
+      && Array.isArray(progress.selectedItems)
+      && progress.selectedItems.length === EMERGENCY_ITEM_LIMIT;
+    if (valid) return progress;
+  } catch {
+    // Ignore malformed or unavailable saved data.
+  }
+  clearTrainingProgress();
+  return null;
+}
+
+function restoreTrainingProgress(progress) {
+  restoringTrainingProgress = true;
+  selectScenario(progress.scenarioId);
+  selectedEmergencyItems.clear();
+  progress.selectedItems.forEach((id) => selectedEmergencyItems.add(id));
+  renderEmergencyItems();
+  selectCharacter(progress.characterType);
+  restoringTrainingProgress = false;
+
+  const now = performance.now();
+  trainingStartTime = now - progress.elapsedMs;
+  trainingDeadlineTime = now + progress.remainingMs;
+  player.position.set(progress.player.x, progress.player.y, progress.player.z);
+  player.rotation.y = progress.player.rotationY;
+  cameraYaw = progress.cameraYaw;
+  cameraPitch = progress.cameraPitch;
+  floodWaterLevel = progress.floodWaterLevel;
+  playerHealth = progress.playerHealth;
+  respawnCount = progress.respawnCount;
+  missionHazardChecked = progress.missionHazardChecked;
+  missionCheckpointDone = progress.missionCheckpointDone;
+  missionHelpNpcDone = progress.missionHelpNpcDone;
+  missionReachShelterDone = progress.missionReachShelterDone;
+  checkpointDecisionResolved = progress.checkpointDecisionResolved;
+  checkpointDecisionMistakes = progress.checkpointDecisionMistakes;
+  routeSampleCount = progress.routeSampleCount || 0;
+  safeRouteSampleCount = progress.safeRouteSampleCount || 0;
+  dangerExposureSeconds = progress.dangerExposureSeconds || 0;
+  usedEmergencyItems.clear();
+  (progress.usedItems || []).forEach((id) => usedEmergencyItems.add(id));
+  flashlightEnabled = Boolean(progress.flashlightEnabled);
+  flashlightLight.intensity = flashlightEnabled ? 8 : 0;
+
+  npcHelpers.forEach((npc) => {
+    const savedNpc = progress.npcs?.find((entry) => entry.id === npc.id);
+    if (!savedNpc) return;
+    npc.rescued = savedNpc.rescued;
+    npc.rescuedOrder = savedNpc.rescuedOrder;
+    npc.group.position.set(savedNpc.x, savedNpc.y, savedNpc.z);
+    npc.marker.render(npc.rescued);
+  });
+
+  missionInspectHazard.classList.toggle('is-done', missionHazardChecked);
+  missionReachCheckpoint.classList.toggle('is-done', missionCheckpointDone);
+  missionHelpNpc.classList.toggle('is-done', missionHelpNpcDone);
+  missionReachShelter.classList.toggle('is-done', missionReachShelterDone);
+  checkpointMarker.visible = !missionCheckpointDone;
+  if (missionHazardChecked) setHazardMapVisible(true);
+  renderInventory();
+  refreshHealthDisplay();
+  updateMissionProgress();
+  updateTrainingStatus(now);
+  resumeTraining.classList.add('is-hidden');
+  showNpcToast('前回の自動保存から訓練を再開しました。', 3200);
+  nextProgressSaveTime = now + 5000;
+}
+
+function offerTrainingResume() {
+  pendingTrainingProgress = readTrainingProgress();
+  if (!pendingTrainingProgress) return;
+  const scenario = getTrainingScenario(pendingTrainingProgress.scenarioId);
+  resumeTrainingSummary.textContent = `${scenario.name}・残り${formatElapsedTime(pendingTrainingProgress.remainingMs)}・救助${pendingTrainingProgress.npcs?.filter((npc) => npc.rescued).length || 0}/${npcHelpers.length}人`;
+  resumeTraining.classList.remove('is-hidden');
+  resumeTrainingContinue.focus();
+}
+
+resumeTrainingContinue.addEventListener('click', () => {
+  if (pendingTrainingProgress) restoreTrainingProgress(pendingTrainingProgress);
+});
+
+resumeTrainingDiscard.addEventListener('click', () => {
+  clearTrainingProgress();
+  resumeTraining.classList.add('is-hidden');
+  characterSelect.querySelector('.scenario-card.is-active')?.focus();
+});
+
 function disposeObject(object) {
   object.traverse((obj) => {
     if (obj.geometry) obj.geometry.dispose();
@@ -4343,6 +4505,7 @@ function selectCharacter(type) {
     currentCharacterType = type;
   }
   if (!characterChosen) {
+    if (!restoringTrainingProgress) clearTrainingProgress();
     trainingStartTime = performance.now();
     trainingDeadlineTime = trainingStartTime + activeScenario.timeLimitSeconds * 1000;
   }
@@ -5846,6 +6009,11 @@ function animate(now) {
   }
   renderer.render(scene, camera);
 
+  if (characterChosen && !trainingCompleteShown && now >= nextProgressSaveTime) {
+    saveTrainingProgress(now);
+    nextProgressSaveTime = now + 5000;
+  }
+
   fpsFrames += 1;
   fpsElapsed += dt;
   if (fpsElapsed >= 0.5) {
@@ -5919,6 +6087,7 @@ selectScenario(activeScenario.id);
 updateMissionProgress();
 updateTrainingStatus(performance.now());
 updateCamera(1);
+offerTrainingResume();
 requestAnimationFrame(animate);
 
 addEventListener('resize', () => {
@@ -5934,6 +6103,8 @@ function updateConnectionStatus() {
 addEventListener('online', updateConnectionStatus);
 addEventListener('offline', updateConnectionStatus);
 updateConnectionStatus();
+
+addEventListener('pagehide', () => saveTrainingProgress());
 
 if ('serviceWorker' in navigator) {
   addEventListener('load', () => {

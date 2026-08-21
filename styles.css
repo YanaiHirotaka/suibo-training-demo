@@ -1429,6 +1429,46 @@ body {
   transition: opacity 220ms ease;
 }
 
+.resume-training {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  color: white;
+  background: rgba(5, 19, 30, 0.76);
+  backdrop-filter: blur(8px);
+}
+
+.resume-training.is-hidden { display: none; }
+
+.resume-training-panel {
+  width: min(92vw, 430px);
+  padding: 24px;
+  background: rgba(14, 46, 54, 0.98);
+  border: 2px solid rgba(143, 226, 255, 0.82);
+  border-radius: 16px;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.48);
+  text-align: center;
+}
+
+.resume-training-panel > span { color: #8fe2ff; font-size: 10px; font-weight: 900; }
+.resume-training-panel h2 { margin: 7px 0 10px; font-size: 19px; }
+.resume-training-panel p { margin: 0 0 17px; color: #d9eff7; font-size: 11px; line-height: 1.55; }
+.resume-training-panel > div { display: flex; gap: 9px; }
+.resume-training-panel button {
+  flex: 1;
+  padding: 11px 8px;
+  color: white;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  border-radius: 9px;
+  font: 900 12px/1.2 inherit;
+  cursor: pointer;
+}
+.resume-training-panel button:last-child { color: #093b27; background: #53f57d; border-color: #9df4b9; }
+
 .character-select.is-hidden {
   opacity: 0;
   pointer-events: none;
