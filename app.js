@@ -27,6 +27,8 @@ const scenarioOptions = document.querySelector('#scenarioOptions');
 const scenarioSelectedSummary = document.querySelector('#scenarioSelectedSummary');
 const emergencyItemOptions = document.querySelector('#emergencyItemOptions');
 const emergencyItemStatus = document.querySelector('#emergencyItemStatus');
+const inventoryBar = document.querySelector('#inventoryBar');
+const inventorySlots = document.querySelector('#inventorySlots');
 const minimapMap = document.querySelector('#minimapMap');
 const minimapContent = document.querySelector('#minimapContent');
 const minimapFrame = document.querySelector('#minimapFrame');
@@ -99,6 +101,8 @@ const EMERGENCY_ITEMS = [
 ];
 const EMERGENCY_ITEM_LIMIT = 4;
 const selectedEmergencyItems = new Set();
+const usedEmergencyItems = new Set();
+let flashlightEnabled = false;
 
 function renderEmergencyItems() {
   emergencyItemOptions.innerHTML = EMERGENCY_ITEMS.map((item) => `
@@ -127,6 +131,23 @@ function toggleEmergencyItem(id) {
 
 function recommendedEmergencyItemCount() {
   return EMERGENCY_ITEMS.filter((item) => item.recommended && selectedEmergencyItems.has(item.id)).length;
+}
+
+function selectedEmergencyItemList() {
+  return EMERGENCY_ITEMS.filter((item) => selectedEmergencyItems.has(item.id));
+}
+
+function renderInventory() {
+  inventorySlots.innerHTML = selectedEmergencyItemList().map((item, index) => `
+    <button class="inventory-slot${usedEmergencyItems.has(item.id) ? ' is-used' : ''}${item.id === 'flashlight' && flashlightEnabled ? ' is-active' : ''}" type="button" data-inventory-index="${index}" aria-label="${index + 1}: ${item.label}">
+      <span class="inventory-slot-key">${index + 1}</span>
+      <span class="inventory-slot-icon" aria-hidden="true">${item.icon}</span>
+      <span class="inventory-slot-name">${item.label}</span>
+    </button>
+  `).join('');
+  inventorySlots.querySelectorAll('.inventory-slot').forEach((slot) => {
+    slot.addEventListener('click', () => useEmergencyItem(Number(slot.dataset.inventoryIndex)));
+  });
 }
 
 function scenarioTimeLabel(seconds) {
@@ -273,6 +294,13 @@ sun.shadow.camera.bottom = -58;
 sun.shadow.camera.near = 1;
 sun.shadow.camera.far = 120;
 scene.add(sun);
+
+const flashlightLight = new THREE.SpotLight(0xfff3c4, 0, 22, Math.PI / 5, 0.55, 1.1);
+const flashlightTarget = new THREE.Object3D();
+flashlightLight.castShadow = false;
+flashlightLight.target = flashlightTarget;
+scene.add(flashlightLight, flashlightTarget);
+const flashlightDirection = new THREE.Vector3();
 
 function canvasTexture(draw, size = 128) {
   const surface = document.createElement('canvas');
@@ -3457,6 +3485,61 @@ function showTrainingAdvice(key, title, text, severity = 'info', durationMs = 60
   return true;
 }
 
+function refreshHealthDisplay() {
+  refreshHealthDisplay();
+}
+
+function useEmergencyItem(index) {
+  if (!characterChosen || trainingCompleteShown) return;
+  const item = selectedEmergencyItemList()[index];
+  if (!item) return;
+
+  if (usedEmergencyItems.has(item.id)) {
+    showNpcToast(`${item.label}は使用済みです。`, 2200);
+    return;
+  }
+
+  if (item.id === 'flashlight') {
+    flashlightEnabled = !flashlightEnabled;
+    flashlightLight.intensity = flashlightEnabled ? 8 : 0;
+    showNpcToast(`ライトを${flashlightEnabled ? '点灯' : '消灯'}しました。`, 2200);
+  } else if (item.id === 'water') {
+    playerHealth = Math.min(PLAYER_MAX_HEALTH, playerHealth + 18);
+    usedEmergencyItems.add(item.id);
+    refreshHealthDisplay();
+    showNpcToast('飲料水で体力を回復しました。少しずつ飲みましょう。', 2800);
+  } else if (item.id === 'firstaid') {
+    playerHealth = Math.min(PLAYER_MAX_HEALTH, playerHealth + 35);
+    usedEmergencyItems.add(item.id);
+    refreshHealthDisplay();
+    showNpcToast('応急手当セットを使用しました。', 2600);
+  } else if (item.id === 'radio') {
+    showTrainingAdvice(
+      `radio-${Math.floor(performance.now())}`,
+      `携帯ラジオ：${activeScenario.name}`,
+      `水位は最大${activeScenario.flood.maxLevelMeters.toFixed(1)}mまで上昇する予測です。安全ルートを維持してください。`,
+      'info', 6500, 0
+    );
+  } else if (item.id === 'toy') {
+    showNpcToast('おもちゃより、命を守る用品を優先して持ち出しましょう。', 3200);
+  } else if (item.id === 'sandals') {
+    showTrainingAdvice(
+      `sandals-${Math.floor(performance.now())}`,
+      'サンダルは浸水路で危険です',
+      '脱げにくく、底が厚い運動靴などで避難しましょう。',
+      'warning', 6000, 0
+    );
+  }
+  renderInventory();
+}
+
+function updateFlashlight() {
+  if (!flashlightEnabled || !characterChosen) return;
+  flashlightLight.position.set(player.position.x, player.position.y + 0.95, player.position.z);
+  camera.getWorldDirection(flashlightDirection);
+  flashlightTarget.position.copy(flashlightLight.position).addScaledVector(flashlightDirection, 8);
+}
+
 function setInteractionPrompt(visible, text = '声をかける') {
   interactionPromptText.textContent = text;
   interactionPrompt.classList.toggle('is-hidden', !visible);
@@ -3733,6 +3816,8 @@ function selectCharacter(type) {
   }
   characterChosen = true;
   characterSelect.classList.add('is-hidden');
+  inventoryBar.classList.remove('is-hidden');
+  renderInventory();
   showTrainingAdvice('training-start', '最初にハザードを確認', '右上の「ハザード表示」を押し、浸水想定と安全な方向を確認してから移動しましょう。', 'info', 7000, 0);
 }
 
@@ -3793,6 +3878,13 @@ addEventListener('keydown', (event) => {
   }
 
   if (!characterChosen) return;
+
+  const inventoryKey = /^Digit([1-4])$/.exec(event.code);
+  if (!editMode && inventoryKey) {
+    event.preventDefault();
+    if (!event.repeat) useEmergencyItem(Number(inventoryKey[1]) - 1);
+    return;
+  }
 
   if (!editMode && event.code === 'KeyE') {
     event.preventDefault();
@@ -5050,6 +5142,7 @@ function animate(now) {
   updateTrainingMetrics(dt);
   updateTrainingCoach(dt);
   updateCamera(dt);
+  updateFlashlight();
   updateMinimap();
   updateSafeRoute(dt);
   updateMissionGuidance();
