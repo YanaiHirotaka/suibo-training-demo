@@ -217,6 +217,20 @@
     <small>WASD：移動　マウス：カメラ　Shift：走る　Space：ジャンプ　E：声をかける　1〜4：持ちもの</small>
   </div>
 
+  <div class="touch-controls is-hidden" id="touchControls" aria-label="タッチ操作">
+    <div class="touch-dpad" aria-label="移動">
+      <button class="touch-up" type="button" data-hold-code="KeyW" aria-label="前へ移動">▲</button>
+      <button class="touch-left" type="button" data-hold-code="KeyA" aria-label="左へ移動">◀</button>
+      <button class="touch-down" type="button" data-hold-code="KeyS" aria-label="後ろへ移動">▼</button>
+      <button class="touch-right" type="button" data-hold-code="KeyD" aria-label="右へ移動">▶</button>
+    </div>
+    <div class="touch-actions">
+      <button type="button" data-touch-action="interact" aria-label="近くの人に声をかける">声かけ</button>
+      <button type="button" data-hold-code="ShiftLeft" aria-label="走る">走る</button>
+      <button class="touch-jump" type="button" data-touch-action="jump" aria-label="ジャンプ">ジャンプ</button>
+    </div>
+  </div>
+
   <div class="edit-panel">
     <button id="editToggle" type="button">編集モード</button>
     <div class="edit-tools is-hidden" id="editTools">

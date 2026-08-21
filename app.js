@@ -33,6 +33,7 @@ const pauseToggle = document.querySelector('#pauseToggle');
 const pauseMenu = document.querySelector('#pauseMenu');
 const pauseResume = document.querySelector('#pauseResume');
 const soundToggle = document.querySelector('#soundToggle');
+const touchControls = document.querySelector('#touchControls');
 const checkpointDecision = document.querySelector('#checkpointDecision');
 const checkpointDecisionFeedback = document.querySelector('#checkpointDecisionFeedback');
 const minimapPanel = document.querySelector('#minimapPanel');
@@ -4230,6 +4231,7 @@ function selectCharacter(type) {
   ensureAudio();
   characterSelect.classList.add('is-hidden');
   inventoryBar.classList.remove('is-hidden');
+  touchControls.classList.remove('is-hidden');
   pauseToggle.classList.remove('is-hidden');
   renderInventory();
   showTrainingAdvice('training-start', '最初にハザードを確認', '右上の「ハザード表示」を押し、浸水想定と安全な方向を確認してから移動しましょう。', 'info', 7000, 0);
@@ -4263,6 +4265,10 @@ characterCards.forEach((card) => {
 });
 
 const keys = new Set();
+const virtualControlCodes = new Set();
+function isControlPressed(code) {
+  return keys.has(code) || virtualControlCodes.has(code);
+}
 // keydown re-fires on the browser's key-repeat timer for as long as a key is
 // genuinely held down. Tracking when each key was last (re-)pressed lets us
 // self-heal a "stuck" key whose keyup got missed - e.g. a synchronous
@@ -4396,10 +4402,48 @@ addEventListener('keyup', (event) => {
 function releaseAllKeys() {
   keys.clear();
   keyLastSeen.clear();
+  virtualControlCodes.clear();
+  touchControls.querySelectorAll('.is-pressed').forEach((button) => button.classList.remove('is-pressed'));
 }
 addEventListener('blur', releaseAllKeys);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) releaseAllKeys();
+});
+
+function triggerPlayerJump() {
+  if (!characterChosen || gamePaused || trainingCompleteShown || editMode) return;
+  const groundHeight = getWalkableHeight(player.position.x, player.position.z);
+  const grounded = Math.abs(player.position.y - groundHeight) < 0.035 && verticalVelocity <= 0;
+  if (grounded) verticalVelocity = jumpVelocity;
+}
+
+touchControls.querySelectorAll('[data-hold-code]').forEach((button) => {
+  const code = button.dataset.holdCode;
+  const release = () => {
+    virtualControlCodes.delete(code);
+    button.classList.remove('is-pressed');
+  };
+  button.addEventListener('pointerdown', (event) => {
+    if (!characterChosen || gamePaused || trainingCompleteShown || editMode) return;
+    event.preventDefault();
+    button.setPointerCapture?.(event.pointerId);
+    virtualControlCodes.add(code);
+    button.classList.add('is-pressed');
+    guide.classList.add('is-hidden');
+  });
+  button.addEventListener('pointerup', release);
+  button.addEventListener('pointercancel', release);
+  button.addEventListener('lostpointercapture', release);
+});
+
+touchControls.querySelector('[data-touch-action="jump"]').addEventListener('pointerdown', (event) => {
+  event.preventDefault();
+  triggerPlayerJump();
+});
+
+touchControls.querySelector('[data-touch-action="interact"]').addEventListener('pointerdown', (event) => {
+  event.preventDefault();
+  if (!gamePaused && !trainingCompleteShown && !editMode) tryHelpNpc();
 });
 
 // --- Tile paint edit mode -------------------------------------------------
@@ -5452,17 +5496,17 @@ function updatePlayer(dt) {
   pruneStaleKeys(performance.now());
   let side = 0;
   let forward = 0;
-  if (keys.has('KeyW') || keys.has('ArrowUp')) forward += 1;
-  if (keys.has('KeyS') || keys.has('ArrowDown')) forward -= 1;
-  if (keys.has('KeyD') || keys.has('ArrowRight')) side += 1;
-  if (keys.has('KeyA') || keys.has('ArrowLeft')) side -= 1;
+  if (isControlPressed('KeyW') || isControlPressed('ArrowUp')) forward += 1;
+  if (isControlPressed('KeyS') || isControlPressed('ArrowDown')) forward -= 1;
+  if (isControlPressed('KeyD') || isControlPressed('ArrowRight')) side += 1;
+  if (isControlPressed('KeyA') || isControlPressed('ArrowLeft')) side -= 1;
 
   moveDirection.set(0, 0, 0);
   if (side || forward) {
     const cameraForward = new THREE.Vector3(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw));
     const cameraRight = new THREE.Vector3(Math.cos(cameraYaw), 0, -Math.sin(cameraYaw));
     moveDirection.addScaledVector(cameraForward, forward).addScaledVector(cameraRight, side).normalize();
-    const baseSpeed = (keys.has('ShiftLeft') || keys.has('ShiftRight')) ? 5.3 : 3.25;
+    const baseSpeed = (isControlPressed('ShiftLeft') || isControlPressed('ShiftRight')) ? 5.3 : 3.25;
     // Wading through flooded ground is slower - checked at the CURRENT
     // position (not the one we're about to move to); the flood depth barely
     // changes within a single frame, so this is close enough without needing
