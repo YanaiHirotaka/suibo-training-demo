@@ -141,6 +141,20 @@
     </div>
   </div>
 
+  <div class="decision-quiz is-hidden" id="checkpointDecision" role="dialog" aria-modal="true" aria-labelledby="checkpointDecisionTitle">
+    <div class="decision-quiz-panel">
+      <span class="decision-quiz-badge">安全行動チェック</span>
+      <h2 id="checkpointDecisionTitle">道路の冠水が始まりました。どう行動する？</h2>
+      <p>安全だと思う行動を1つ選んでください。回答中は訓練時間と水位が停止します。</p>
+      <div class="decision-options">
+        <button type="button" data-decision="safe">ハザードマップと案内を確認し、低い場所を避けて高い避難所へ進む</button>
+        <button type="button" data-decision="river">距離が短いので、川沿いの道を急いで進む</button>
+        <button type="button" data-decision="underpass">雨を避けられるアンダーパスを通る</button>
+      </div>
+      <p class="decision-feedback" id="checkpointDecisionFeedback" aria-live="polite">水は低い場所へ集まり、見た目より深くなることがあります。</p>
+    </div>
+  </div>
+
   <aside class="minimap-panel" aria-label="フィールド全体ミニマップ">
     <header>
       <span>ミニマップ</span>
@@ -315,6 +329,7 @@
         <li><span>経過時間</span><strong id="statElapsedTime">--</strong></li>
         <li><span>救助人数</span><strong id="statRescuedPeople">--</strong></li>
         <li><span>非常持出品</span><strong id="statPreparedItems">--</strong></li>
+        <li><span>安全行動の判断</span><strong id="statDecision">--</strong></li>
         <li><span>安全ルート遵守率</span><strong id="statSafeRoute">--</strong></li>
         <li><span>危険水域にいた時間</span><strong id="statDangerTime">--</strong></li>
         <li><span>体力</span><strong id="statHealth">--</strong></li>

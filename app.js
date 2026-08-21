@@ -32,6 +32,8 @@ const inventorySlots = document.querySelector('#inventorySlots');
 const pauseToggle = document.querySelector('#pauseToggle');
 const pauseMenu = document.querySelector('#pauseMenu');
 const pauseResume = document.querySelector('#pauseResume');
+const checkpointDecision = document.querySelector('#checkpointDecision');
+const checkpointDecisionFeedback = document.querySelector('#checkpointDecisionFeedback');
 const minimapMap = document.querySelector('#minimapMap');
 const minimapContent = document.querySelector('#minimapContent');
 const minimapFrame = document.querySelector('#minimapFrame');
@@ -85,6 +87,7 @@ const statScenario = document.querySelector('#statScenario');
 const statElapsedTime = document.querySelector('#statElapsedTime');
 const statRescuedPeople = document.querySelector('#statRescuedPeople');
 const statPreparedItems = document.querySelector('#statPreparedItems');
+const statDecision = document.querySelector('#statDecision');
 const statSafeRoute = document.querySelector('#statSafeRoute');
 const statDangerTime = document.querySelector('#statDangerTime');
 const statHealth = document.querySelector('#statHealth');
@@ -108,6 +111,9 @@ const usedEmergencyItems = new Set();
 let flashlightEnabled = false;
 let gamePaused = false;
 let pauseStartedAt = 0;
+let checkpointDecisionOpen = false;
+let checkpointDecisionResolved = false;
+let checkpointDecisionMistakes = 0;
 
 function renderEmergencyItems() {
   emergencyItemOptions.innerHTML = EMERGENCY_ITEMS.map((item) => `
@@ -2729,6 +2735,49 @@ function completeCheckpointMission() {
   updateMissionProgress();
 }
 
+function openCheckpointDecision() {
+  if (checkpointDecisionOpen || checkpointDecisionResolved) return;
+  checkpointDecisionOpen = true;
+  checkpointDecisionFeedback.textContent = '水は低い場所へ集まり、見た目より深くなることがあります。';
+  checkpointDecisionFeedback.classList.remove('is-error');
+  setGamePaused(true);
+  pauseMenu.classList.add('is-hidden');
+  pauseToggle.classList.add('is-hidden');
+  checkpointDecision.classList.remove('is-hidden');
+  checkpointDecision.querySelector('[data-decision="safe"]').focus();
+}
+
+function answerCheckpointDecision(answer, button) {
+  if (!checkpointDecisionOpen) return;
+  if (answer === 'safe') {
+    checkpointDecisionResolved = true;
+    checkpointDecisionOpen = false;
+    checkpointDecision.classList.add('is-hidden');
+    pauseToggle.classList.remove('is-hidden');
+    setGamePaused(false);
+    completeCheckpointMission();
+    showTrainingAdvice(
+      'safe-decision',
+      '安全な判断です',
+      '冠水時は近道よりも、浸水想定を確認して低い場所を避け、高い避難所へ向かいましょう。',
+      'info', 7000, 0
+    );
+    return;
+  }
+
+  checkpointDecisionMistakes += 1;
+  button.disabled = true;
+  button.classList.add('is-wrong');
+  checkpointDecisionFeedback.classList.add('is-error');
+  checkpointDecisionFeedback.textContent = answer === 'river'
+    ? '川沿いは急な増水や流れ込みの危険があります。距離の短さだけで選ばないでください。'
+    : 'アンダーパスは水が集まりやすく、短時間で深く冠水するため避けてください。';
+}
+
+checkpointDecision.querySelectorAll('[data-decision]').forEach((button) => {
+  button.addEventListener('click', () => answerCheckpointDecision(button.dataset.decision, button));
+});
+
 function shelterWorldCenter() {
   const c = missionShelter.collider;
   return { x: (c.minX + c.maxX) / 2, z: (c.minZ + c.maxZ) / 2 };
@@ -2797,7 +2846,7 @@ function updateMissionGuidance() {
   const distance = Math.hypot(dx, dz);
 
   if (missionHazardChecked && !missionCheckpointDone && distance < 2.2) {
-    completeCheckpointMission();
+    openCheckpointDecision();
   }
   const playerAtShelter = missionHelpNpcDone && distance < shelterArrivalRadius();
   const waitingForEscort = playerAtShelter && !allRescuedPeopleAtShelter();
@@ -3727,12 +3776,14 @@ function trainingResult() {
   const remainingSeconds = Math.max(0, activeScenario.timeLimitSeconds - elapsedSeconds);
   const routeRate = routeSampleCount ? safeRouteSampleCount / routeSampleCount : 1;
   const preparationRate = recommendedEmergencyItemCount() / EMERGENCY_ITEM_LIMIT;
+  const decisionBonus = Math.max(0, 600 - checkpointDecisionMistakes * 300);
   const score = Math.max(0, Math.round((
     6000
     + 1000
     + 1000
     + (rescuedPeopleTotal() / npcHelpers.length) * 1500
     + preparationRate * 800
+    + decisionBonus
     + routeRate * 2500
     + Math.min(1800, remainingSeconds * 10)
     + (playerHealth / PLAYER_MAX_HEALTH) * 1000
@@ -3740,13 +3791,15 @@ function trainingResult() {
     - dangerExposureSeconds * 20
   ) * activeScenario.scoreMultiplier));
   const rank = score >= 13500 ? 'S' : score >= 11500 ? 'A' : score >= 9000 ? 'B' : 'C';
-  return { elapsedSeconds, routeRate, preparationRate, score, rank };
+  return { elapsedSeconds, routeRate, preparationRate, decisionBonus, score, rank };
 }
 
 function trainingFeedback(result) {
   const feedback = [];
   if (result.preparationRate === 1) feedback.push('ライト・飲料水・携帯ラジオ・応急手当セットを選び、適切な避難準備ができました。');
   else feedback.push('非常持出品は、ライト・飲料水・携帯ラジオ・応急手当セットを優先しましょう。サンダルは浸水路で脱げやすく危険です。');
+  if (checkpointDecisionMistakes === 0) feedback.push('冠水時に低い場所を避ける判断を、一度で正しく選べました。');
+  else feedback.push('川沿いやアンダーパスは急な冠水の危険があります。近道より高く安全な経路を選びましょう。');
   if (result.routeRate >= 0.9) feedback.push('安全ルートをよく確認し、危険区域を避けて移動できました。');
   else if (result.routeRate >= 0.7) feedback.push('おおむね安全に移動できました。案内矢印から離れたときは、ミニマップを再確認しましょう。');
   else feedback.push('浸水区域を避けるため、3D矢印とミニマップの安全ルートに沿って移動しましょう。');
@@ -3778,6 +3831,7 @@ function checkTrainingComplete() {
   statElapsedTime.textContent = formatElapsedTime(trainingFinishTime - trainingStartTime);
   statRescuedPeople.textContent = `${rescuedPeopleTotal()}/${npcHelpers.length}人`;
   statPreparedItems.textContent = `${recommendedEmergencyItemCount()}/${EMERGENCY_ITEM_LIMIT}品適切`;
+  statDecision.textContent = checkpointDecisionMistakes === 0 ? '一回で正解' : `${checkpointDecisionMistakes}回再検討`;
   statSafeRoute.textContent = `${Math.round(result.routeRate * 100)}%`;
   statDangerTime.textContent = `${dangerExposureSeconds.toFixed(1)}秒`;
   statHealth.textContent = `${Math.ceil(playerHealth)}/${PLAYER_MAX_HEALTH}`;
@@ -3893,6 +3947,10 @@ const cameraLookTarget = new THREE.Vector3();
 const desiredCamera = new THREE.Vector3();
 
 addEventListener('keydown', (event) => {
+  if (checkpointDecisionOpen) {
+    if (event.code === 'Escape') event.preventDefault();
+    return;
+  }
   // Esc backs out one level at a time: first an in-progress range selection,
   // then a selected building, and finally edit mode itself. Checked ahead of
   // the characterChosen guard so it still works if edit mode was opened from
