@@ -25,6 +25,8 @@ const floodToggle = document.querySelector('#floodToggle');
 const characterCards = document.querySelectorAll('.character-card');
 const scenarioOptions = document.querySelector('#scenarioOptions');
 const scenarioSelectedSummary = document.querySelector('#scenarioSelectedSummary');
+const emergencyItemOptions = document.querySelector('#emergencyItemOptions');
+const emergencyItemStatus = document.querySelector('#emergencyItemStatus');
 const minimapMap = document.querySelector('#minimapMap');
 const minimapContent = document.querySelector('#minimapContent');
 const minimapFrame = document.querySelector('#minimapFrame');
@@ -77,6 +79,7 @@ const statScore = document.querySelector('#statScore');
 const statScenario = document.querySelector('#statScenario');
 const statElapsedTime = document.querySelector('#statElapsedTime');
 const statRescuedPeople = document.querySelector('#statRescuedPeople');
+const statPreparedItems = document.querySelector('#statPreparedItems');
 const statSafeRoute = document.querySelector('#statSafeRoute');
 const statDangerTime = document.querySelector('#statDangerTime');
 const statHealth = document.querySelector('#statHealth');
@@ -86,6 +89,45 @@ const trainingRetryButton = document.querySelector('#trainingRetry');
 const floodGaugeTickLabels = document.querySelectorAll('.flood-gauge-ticks span');
 
 let activeScenario = getTrainingScenario('standard');
+const EMERGENCY_ITEMS = [
+  { id: 'flashlight', label: 'ライト', icon: '🔦', recommended: true },
+  { id: 'water', label: '飲料水', icon: '💧', recommended: true },
+  { id: 'radio', label: 'ラジオ', icon: '📻', recommended: true },
+  { id: 'firstaid', label: '救急セット', icon: '➕', recommended: true },
+  { id: 'toy', label: 'おもちゃ', icon: '🧸', recommended: false },
+  { id: 'sandals', label: 'サンダル', icon: '🩴', recommended: false }
+];
+const EMERGENCY_ITEM_LIMIT = 4;
+const selectedEmergencyItems = new Set();
+
+function renderEmergencyItems() {
+  emergencyItemOptions.innerHTML = EMERGENCY_ITEMS.map((item) => `
+    <button class="emergency-item-card${selectedEmergencyItems.has(item.id) ? ' is-selected' : ''}" type="button" data-item="${item.id}" aria-pressed="${selectedEmergencyItems.has(item.id)}">
+      <span class="emergency-item-icon" aria-hidden="true">${item.icon}</span>
+      <strong>${item.label}</strong>
+    </button>
+  `).join('');
+  emergencyItemStatus.textContent = `${selectedEmergencyItems.size}/${EMERGENCY_ITEM_LIMIT} 選択中`;
+  emergencyItemStatus.classList.remove('is-error');
+  emergencyItemOptions.querySelectorAll('.emergency-item-card').forEach((card) => {
+    card.addEventListener('click', () => toggleEmergencyItem(card.dataset.item));
+  });
+}
+
+function toggleEmergencyItem(id) {
+  if (selectedEmergencyItems.has(id)) selectedEmergencyItems.delete(id);
+  else if (selectedEmergencyItems.size < EMERGENCY_ITEM_LIMIT) selectedEmergencyItems.add(id);
+  else {
+    emergencyItemStatus.textContent = '4つまでです。選択を1つ外してください。';
+    emergencyItemStatus.classList.add('is-error');
+    return;
+  }
+  renderEmergencyItems();
+}
+
+function recommendedEmergencyItemCount() {
+  return EMERGENCY_ITEMS.filter((item) => item.recommended && selectedEmergencyItems.has(item.id)).length;
+}
 
 function scenarioTimeLabel(seconds) {
   const minutes = Math.floor(seconds / 60);
@@ -3596,11 +3638,13 @@ function trainingResult() {
   const elapsedSeconds = Math.max(0, (trainingFinishTime - trainingStartTime) / 1000);
   const remainingSeconds = Math.max(0, activeScenario.timeLimitSeconds - elapsedSeconds);
   const routeRate = routeSampleCount ? safeRouteSampleCount / routeSampleCount : 1;
+  const preparationRate = recommendedEmergencyItemCount() / EMERGENCY_ITEM_LIMIT;
   const score = Math.max(0, Math.round((
     6000
     + 1000
     + 1000
     + (rescuedPeopleTotal() / npcHelpers.length) * 1500
+    + preparationRate * 800
     + routeRate * 2500
     + Math.min(1800, remainingSeconds * 10)
     + (playerHealth / PLAYER_MAX_HEALTH) * 1000
@@ -3608,11 +3652,13 @@ function trainingResult() {
     - dangerExposureSeconds * 20
   ) * activeScenario.scoreMultiplier));
   const rank = score >= 13500 ? 'S' : score >= 11500 ? 'A' : score >= 9000 ? 'B' : 'C';
-  return { elapsedSeconds, routeRate, score, rank };
+  return { elapsedSeconds, routeRate, preparationRate, score, rank };
 }
 
 function trainingFeedback(result) {
   const feedback = [];
+  if (result.preparationRate === 1) feedback.push('ライト・飲料水・携帯ラジオ・応急手当セットを選び、適切な避難準備ができました。');
+  else feedback.push('非常持出品は、ライト・飲料水・携帯ラジオ・応急手当セットを優先しましょう。サンダルは浸水路で脱げやすく危険です。');
   if (result.routeRate >= 0.9) feedback.push('安全ルートをよく確認し、危険区域を避けて移動できました。');
   else if (result.routeRate >= 0.7) feedback.push('おおむね安全に移動できました。案内矢印から離れたときは、ミニマップを再確認しましょう。');
   else feedback.push('浸水区域を避けるため、3D矢印とミニマップの安全ルートに沿って移動しましょう。');
@@ -3643,6 +3689,7 @@ function checkTrainingComplete() {
   statScenario.textContent = activeScenario.name;
   statElapsedTime.textContent = formatElapsedTime(trainingFinishTime - trainingStartTime);
   statRescuedPeople.textContent = `${rescuedPeopleTotal()}/${npcHelpers.length}人`;
+  statPreparedItems.textContent = `${recommendedEmergencyItemCount()}/${EMERGENCY_ITEM_LIMIT}品適切`;
   statSafeRoute.textContent = `${Math.round(result.routeRate * 100)}%`;
   statDangerTime.textContent = `${dangerExposureSeconds.toFixed(1)}秒`;
   statHealth.textContent = `${Math.ceil(playerHealth)}/${PLAYER_MAX_HEALTH}`;
@@ -3663,6 +3710,12 @@ function disposeObject(object) {
 }
 
 function selectCharacter(type) {
+  if (selectedEmergencyItems.size !== EMERGENCY_ITEM_LIMIT) {
+    emergencyItemStatus.textContent = `非常持出品を${EMERGENCY_ITEM_LIMIT}つ選んでから開始してください。`;
+    emergencyItemStatus.classList.add('is-error');
+    emergencyItemOptions.querySelector('.emergency-item-card')?.focus();
+    return;
+  }
   if (type !== currentCharacterType) {
     const prevPosition = player.position.clone();
     const prevRotationY = player.rotation.y;
@@ -5057,6 +5110,7 @@ hazardToggle.addEventListener('click', () => {
 
 initMinimap();
 renderScenarioOptions();
+renderEmergencyItems();
 selectScenario(activeScenario.id);
 updateMissionProgress();
 updateTrainingStatus(performance.now());
