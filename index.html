@@ -247,11 +247,25 @@
     <div class="training-complete-panel">
       <h2>訓練完了！</h2>
       <p class="training-complete-sub">お疲れ様でした。避難行動を無事にやり遂げました。</p>
+      <div class="training-result-score">
+        <span class="training-result-rank" id="statRank">A</span>
+        <span class="training-result-score-copy">
+          <small>総合スコア</small>
+          <strong><span id="statScore">0</span> pt</strong>
+        </span>
+      </div>
       <ul class="training-stats">
         <li><span>経過時間</span><strong id="statElapsedTime">--</strong></li>
+        <li><span>救助人数</span><strong id="statRescuedPeople">--</strong></li>
+        <li><span>安全ルート遵守率</span><strong id="statSafeRoute">--</strong></li>
+        <li><span>危険水域にいた時間</span><strong id="statDangerTime">--</strong></li>
         <li><span>体力</span><strong id="statHealth">--</strong></li>
         <li><span>危険な状況からの復帰</span><strong id="statRespawns">--</strong></li>
       </ul>
+      <div class="training-feedback">
+        <strong>今回の振り返り</strong>
+        <ul id="trainingFeedbackList"></ul>
+      </div>
       <button id="trainingRetry" type="button">もう一度訓練する</button>
     </div>
   </div>

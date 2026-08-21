@@ -64,9 +64,15 @@ const dangerText = document.querySelector('#dangerText');
 const npcToast = document.querySelector('#npcToast');
 const npcToastText = document.querySelector('#npcToastText');
 const trainingComplete = document.querySelector('#trainingComplete');
+const statRank = document.querySelector('#statRank');
+const statScore = document.querySelector('#statScore');
 const statElapsedTime = document.querySelector('#statElapsedTime');
+const statRescuedPeople = document.querySelector('#statRescuedPeople');
+const statSafeRoute = document.querySelector('#statSafeRoute');
+const statDangerTime = document.querySelector('#statDangerTime');
 const statHealth = document.querySelector('#statHealth');
 const statRespawns = document.querySelector('#statRespawns');
+const trainingFeedbackList = document.querySelector('#trainingFeedbackList');
 const trainingRetryButton = document.querySelector('#trainingRetry');
 
 const mapConfig = Object.freeze({
@@ -2541,6 +2547,25 @@ function safeRouteDistance() {
   }
   return total;
 }
+
+function distanceToSafeRoute(x, z) {
+  if (safeRoutePoints.length < 2) return Number.POSITIVE_INFINITY;
+  let closest = Number.POSITIVE_INFINITY;
+  for (let index = 1; index < safeRoutePoints.length; index++) {
+    const a = safeRoutePoints[index - 1];
+    const b = safeRoutePoints[index];
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const lengthSquared = dx * dx + dz * dz;
+    const amount = lengthSquared > 0
+      ? THREE.MathUtils.clamp(((x - a.x) * dx + (z - a.z) * dz) / lengthSquared, 0, 1)
+      : 0;
+    const closestX = a.x + dx * amount;
+    const closestZ = a.z + dz * amount;
+    closest = Math.min(closest, Math.hypot(x - closestX, z - closestZ));
+  }
+  return closest;
+}
 // --------------------------------------------------------------------------
 
 let missionHazardChecked = false;
@@ -3313,6 +3338,54 @@ function updateNpcInteraction(dt) {
 // order, so each completion path calls this and it only fires once, when
 // the second one lands.
 let trainingCompleteShown = false;
+let routeSampleTimer = 0;
+let routeSampleCount = 0;
+let safeRouteSampleCount = 0;
+let dangerExposureSeconds = 0;
+
+function updateTrainingMetrics(dt) {
+  if (!characterChosen || trainingCompleteShown) return;
+  if (playerFloodDepth() > FLOOD_WARNING_DEPTH_METERS) dangerExposureSeconds += dt;
+  if (!missionHazardChecked || safeRoutePoints.length < 2) return;
+  routeSampleTimer -= dt;
+  if (routeSampleTimer > 0) return;
+  routeSampleTimer = 0.5;
+  routeSampleCount += 1;
+  if (distanceToSafeRoute(player.position.x, player.position.z) <= 1.35) safeRouteSampleCount += 1;
+}
+
+function trainingResult() {
+  const elapsedSeconds = Math.max(0, (trainingFinishTime - trainingStartTime) / 1000);
+  const remainingSeconds = Math.max(0, TRAINING_TIME_LIMIT_SECONDS - elapsedSeconds);
+  const routeRate = routeSampleCount ? safeRouteSampleCount / routeSampleCount : 1;
+  const score = Math.max(0, Math.round(
+    6000
+    + 1000
+    + 1000
+    + (missionHelpNpcDone ? 1500 : 0)
+    + routeRate * 2500
+    + Math.min(1800, remainingSeconds * 10)
+    + (playerHealth / PLAYER_MAX_HEALTH) * 1000
+    - respawnCount * 800
+    - dangerExposureSeconds * 20
+  ));
+  const rank = score >= 13500 ? 'S' : score >= 11500 ? 'A' : score >= 9000 ? 'B' : 'C';
+  return { elapsedSeconds, routeRate, score, rank };
+}
+
+function trainingFeedback(result) {
+  const feedback = [];
+  if (result.routeRate >= 0.9) feedback.push('安全ルートをよく確認し、危険区域を避けて移動できました。');
+  else if (result.routeRate >= 0.7) feedback.push('おおむね安全に移動できました。案内矢印から離れたときは、ミニマップを再確認しましょう。');
+  else feedback.push('浸水区域を避けるため、3D矢印とミニマップの安全ルートに沿って移動しましょう。');
+
+  if (dangerExposureSeconds < 2 && respawnCount === 0) feedback.push('深い浸水に入らず、体力を保ったまま避難できました。');
+  else feedback.push('水深が1mを超える場所は危険です。浸水の浅い道や高い場所を選びましょう。');
+
+  if (result.elapsedSeconds <= TRAINING_TIME_LIMIT_SECONDS) feedback.push('避難猶予内に、近くの人と一緒に避難所へ到着できました。');
+  else feedback.push('避難開始が遅れるほど水位が上がります。ハザード確認後は早めに行動しましょう。');
+  return feedback;
+}
 
 function formatElapsedTime(ms) {
   const totalSeconds = Math.max(0, Math.round(ms / 1000));
@@ -3325,9 +3398,17 @@ function checkTrainingComplete() {
   if (trainingCompleteShown || !missionHazardChecked || !missionCheckpointDone || !missionHelpNpcDone || !missionReachShelterDone) return;
   trainingCompleteShown = true;
   trainingFinishTime = performance.now();
+  const result = trainingResult();
+  const feedback = trainingFeedback(result);
+  statRank.textContent = result.rank;
+  statScore.textContent = result.score.toLocaleString('ja-JP');
   statElapsedTime.textContent = formatElapsedTime(trainingFinishTime - trainingStartTime);
+  statRescuedPeople.textContent = missionHelpNpcDone ? '1/1人' : '0/1人';
+  statSafeRoute.textContent = `${Math.round(result.routeRate * 100)}%`;
+  statDangerTime.textContent = `${dangerExposureSeconds.toFixed(1)}秒`;
   statHealth.textContent = `${Math.ceil(playerHealth)}/${PLAYER_MAX_HEALTH}`;
   statRespawns.textContent = `${respawnCount}回`;
+  trainingFeedbackList.innerHTML = feedback.map((message) => `<li>${message}</li>`).join('');
   trainingComplete.classList.remove('is-hidden');
 }
 
@@ -4663,6 +4744,7 @@ function animate(now) {
   lastTime = now;
   applyPaintIfDirty();
   updatePlayer(dt);
+  updateTrainingMetrics(dt);
   updateCamera(dt);
   updateMinimap();
   updateSafeRoute(dt);
