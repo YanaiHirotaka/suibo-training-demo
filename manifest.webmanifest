@@ -1,0 +1,19 @@
+{
+  "name": "水防訓練フィールド",
+  "short_name": "水防訓練",
+  "description": "浸水状況を判断し、安全な避難行動を学ぶ水防災訓練ゲーム",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#83cffa",
+  "theme_color": "#0c3858",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

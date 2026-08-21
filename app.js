@@ -4,6 +4,7 @@ import { TRAINING_SCENARIOS, getTrainingScenario } from './scenarios.js';
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
 const fpsCounter = document.querySelector('#fpsCounter');
+const offlineStatus = document.querySelector('#offlineStatus');
 const characterSelect = document.querySelector('#characterSelect');
 const editToggle = document.querySelector('#editToggle');
 const editTools = document.querySelector('#editTools');
@@ -5876,3 +5877,19 @@ addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
 });
+
+function updateConnectionStatus() {
+  offlineStatus.classList.toggle('is-hidden', navigator.onLine);
+}
+
+addEventListener('online', updateConnectionStatus);
+addEventListener('offline', updateConnectionStatus);
+updateConnectionStatus();
+
+if ('serviceWorker' in navigator) {
+  addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch((error) => {
+      console.warn('オフライン機能を開始できませんでした。', error);
+    });
+  });
+}
