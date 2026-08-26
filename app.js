@@ -1,4 +1,4 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+import * as THREE from './vendor/three.module.js';
 import { TRAINING_SCENARIOS, getTrainingScenario } from './scenarios.js';
 
 const canvas = document.querySelector('#game');
@@ -61,6 +61,7 @@ const hazardToggle = document.querySelector('#hazardToggle');
 const hazardLegend = document.querySelector('#hazardLegend');
 const minimapRoads = document.querySelector('#minimapRoads');
 const minimapRiver = document.querySelector('#minimapRiver');
+const minimapSafeRoute = document.querySelector('#minimapSafeRoute');
 const minimapHouse = document.querySelector('#minimapHouse');
 const minimapAdditionalHouses = document.querySelector('#minimapAdditionalHouses');
 const minimapNpcMarkers = document.querySelector('#minimapNpcMarkers');
@@ -69,7 +70,6 @@ const minimapPlayer = document.querySelector('#minimapPlayer');
 const minimapSizeLabel = document.querySelector('#minimapSizeLabel');
 const minimapGoal = document.querySelector('#minimapGoal');
 const minimapGoalLine = document.querySelector('#minimapGoalLine');
-const minimapSafeRoute = document.querySelector('#minimapSafeRoute');
 const missionInspectHazard = document.querySelector('#missionInspectHazard');
 const missionReachCheckpoint = document.querySelector('#missionReachCheckpoint');
 const missionHelpNpc = document.querySelector('#missionHelpNpc');
@@ -410,6 +410,12 @@ const mapConfig = Object.freeze({
     x: 75 + 7 * 15,
     z: 187.5
   },
+  terrain: {
+    // During the city-layout phase, start from one flat ground plane. Height
+    // editing still works after load, but the old baked and saved height
+    // deltas are intentionally not applied to this development revision.
+    flatDevelopment: true
+  },
   structures: {
     startHouse: {
       centerBlock: {
@@ -431,7 +437,9 @@ const mapConfig = Object.freeze({
       {
         name: 'BlockApartment',
         label: 'アパート',
-        centerBlock: { x: 52.5 + 7 * 15, z: 142.5 },
+        // Keep the building in the north-west city block instead of letting
+        // the new east-west road pass through its southern rooms.
+        centerBlock: { x: 146, z: 132 },
         halfBlocks: 7,
         wallHeightBlocks: 24,
         roofHeightBlocks: 2,
@@ -445,6 +453,17 @@ const mapConfig = Object.freeze({
       widthBlocks: 15,
       gapFromHouseRightBlocks: 5,
       targetCellFromNorth: 9
+    },
+    urbanRoads: {
+      surfaceRaiseMeters: 0.09,
+      crossStreet: { minX: 118, maxX: 210, centerZ: 148, widthBlocks: 11 },
+      riverfront: { minZ: 104, maxZ: 190, innerOffsetBlocks: 4, widthBlocks: 10 },
+      secondaryRoads: [
+        { name: 'EvacuationAvenue', orientation: 'vertical', center: 162, min: 104, max: 148, widthBlocks: 9 },
+        { name: 'NorthStreet', orientation: 'horizontal', center: 108, min: 40.5, max: 190, widthBlocks: 9 },
+        { name: 'ShelterApproach', orientation: 'vertical', center: 40.5, min: 50, max: 112, widthBlocks: 9 }
+      ],
+      bridge: { centerZ: 148, widthBlocks: 9, bankOverlapBlocks: 4, deckHeightMeters: 0.28 }
     },
     stairsFromRoad: {
       angleDegrees: 60,
@@ -825,6 +844,68 @@ function isRoadBlock(blockX, blockZ) {
     && blockZ <= Math.ceil(road.bottom) - 1;
 }
 
+function isUrbanRoadBlock(blockX, blockZ) {
+  const urban = mapConfig.areas.urbanRoads;
+  const halfCrossWidth = urban.crossStreet.widthBlocks / 2;
+  const isCrossStreet = blockX >= urban.crossStreet.minX
+    && blockX < urban.crossStreet.maxX
+    && blockZ >= urban.crossStreet.centerZ - halfCrossWidth
+    && blockZ <= urban.crossStreet.centerZ + halfCrossWidth;
+
+  const riverEdge = riverEdgesAtBlockZ(blockZ).left;
+  const riverfrontOuter = riverEdge - urban.riverfront.innerOffsetBlocks;
+  const riverfrontInner = riverfrontOuter - urban.riverfront.widthBlocks;
+  const isRiverfront = blockZ >= urban.riverfront.minZ
+    && blockZ <= urban.riverfront.maxZ
+    && blockX >= riverfrontInner
+    && blockX <= riverfrontOuter;
+
+  const isSecondaryRoad = urban.secondaryRoads.some((road) => {
+    const halfWidth = road.widthBlocks / 2;
+    return road.orientation === 'vertical'
+      ? blockX >= road.center - halfWidth && blockX <= road.center + halfWidth
+        && blockZ >= road.min && blockZ <= road.max
+      : blockZ >= road.center - halfWidth && blockZ <= road.center + halfWidth
+        && blockX >= road.min && blockX <= road.max;
+  });
+
+  return isCrossStreet || isRiverfront || isSecondaryRoad;
+}
+
+function bridgeBoundsAt(blockZ = mapConfig.areas.urbanRoads.bridge.centerZ) {
+  const bridge = mapConfig.areas.urbanRoads.bridge;
+  const { left, right } = riverEdgesAtBlockZ(blockZ);
+  return {
+    minBlockX: left - bridge.bankOverlapBlocks,
+    maxBlockX: right + bridge.bankOverlapBlocks,
+    minBlockZ: bridge.centerZ - bridge.widthBlocks / 2,
+    maxBlockZ: bridge.centerZ + bridge.widthBlocks / 2
+  };
+}
+
+function bridgeDeckHeightMeters() {
+  const urban = mapConfig.areas.urbanRoads;
+  const bridge = urban.bridge;
+  const bounds = bridgeBoundsAt(bridge.centerZ);
+  const bankSamples = [
+    Math.floor(bounds.minBlockX - 1),
+    Math.ceil(bounds.maxBlockX + 1)
+  ];
+  const bankHeight = Math.max(...bankSamples.map((blockX) => (
+    getTerrainHeightBlocks(
+      THREE.MathUtils.clamp(blockX, 0, tilesWide - 1),
+      Math.floor(bridge.centerZ)
+    ) * tileSize
+  )));
+  return Math.max(bridge.deckHeightMeters, bankHeight + urban.surfaceRaiseMeters);
+}
+
+function isInsideBridgeDeckBlocks(blockX, blockZ) {
+  const bounds = bridgeBoundsAt(blockZ);
+  return blockX >= bounds.minBlockX && blockX <= bounds.maxBlockX
+    && blockZ >= bounds.minBlockZ && blockZ <= bounds.maxBlockZ;
+}
+
 // The straight path continuing north from the top of the stairs to the map
 // edge, over the flattened plateau. Deeply overlaps the angled top of the
 // stairs (about a full stair-width) so the seam between the straight edge
@@ -920,6 +1001,7 @@ function getTerrainHeightBlocks(blockX, blockZ) {
 function getBaseTerrainHeightBlocks(blockX, blockZ) {
   if (blockX < 0 || blockX >= tilesWide || blockZ < 0 || blockZ >= tilesDeep) return 0;
   if (isRiverBlock(blockX, blockZ)) return 0;
+  if (mapConfig.terrain.flatDevelopment) return 0;
   // The 7-cell western expansion just extrudes whatever height the old west
   // edge (now at WEST_EXPANSION_BLOCKS) had for this row, so existing terrain
   // shapes (plateau, ramp...) are preserved rather than recomputed against an
@@ -1477,12 +1559,14 @@ try {
 }
 
 const HEIGHT_STORAGE_KEY = 'suiboHeightPaintOverrides';
-for (const [key, value] of DEFAULT_HEIGHT_OVERRIDES) heightPaintOverrides.set(key, value);
-try {
-  const savedHeights = JSON.parse(localStorage.getItem(HEIGHT_STORAGE_KEY) || '[]');
-  for (const [key, value] of savedHeights) heightPaintOverrides.set(key, value);
-} catch (error) {
-  console.warn('Could not load height overrides:', error);
+if (!mapConfig.terrain.flatDevelopment) {
+  for (const [key, value] of DEFAULT_HEIGHT_OVERRIDES) heightPaintOverrides.set(key, value);
+  try {
+    const savedHeights = JSON.parse(localStorage.getItem(HEIGHT_STORAGE_KEY) || '[]');
+    for (const [key, value] of savedHeights) heightPaintOverrides.set(key, value);
+  } catch (error) {
+    console.warn('Could not load height overrides:', error);
+  }
 }
 
 // Range-select "floating" placements: rectangular slabs of blocks that sit in
@@ -1518,6 +1602,7 @@ const DEFAULT_STRUCTURE_OFFSETS = [
 function baseTileType(x, z) {
   if (isRiverBlock(x, z)) return 'river';
   if (isRoadBlock(x, z)) return 'road';
+  if (isUrbanRoadBlock(x, z)) return 'road';
   // The block ramp generates its own asphalt top. Do not place a ground tile
   // there too, otherwise the two coplanar surfaces flicker. Checked before
   // the plateau path so the deep overlap between the ramp and the straight
@@ -1678,6 +1763,10 @@ function createTerrainFillBlocks() {
       }
     }
   }
+
+  // A fully flat map has no raised terrain cubes. In that case Three.js does
+  // not allocate instanceColor, so skip the empty InstancedMesh altogether.
+  if (cells.length === 0) return null;
 
   const mesh = new THREE.InstancedMesh(
     new THREE.BoxGeometry(tileSize - 0.004, tileSize - 0.004, tileSize - 0.004),
@@ -1953,6 +2042,11 @@ function createRiverFences() {
   for (const side of [-1, 1]) {
     let previous = null;
     for (let z = 2; z <= tilesDeep - 2; z += fence.postSpacingBlocks) {
+      const bridge = mapConfig.areas.urbanRoads.bridge;
+      if (Math.abs(z - bridge.centerZ) <= bridge.widthBlocks / 2 + 2) {
+        previous = null;
+        continue;
+      }
       const { left, right } = riverEdgesAtBlockZ(z);
       const edge = side < 0 ? left : right;
       const blockX = THREE.MathUtils.clamp(edge + side * fence.offsetBlocks, 1, tilesWide - 1);
@@ -2018,6 +2112,193 @@ function createRiverFences() {
 }
 
 createRiverFences();
+
+function createUrbanInfrastructure() {
+  const group = new THREE.Group();
+  group.name = 'UrbanRoadInfrastructure';
+  const urban = mapConfig.areas.urbanRoads;
+  const bridge = urban.bridge;
+  const bounds = bridgeBoundsAt();
+  const minWorldX = worldXFromBlock(bounds.minBlockX);
+  const maxWorldX = worldXFromBlock(bounds.maxBlockX);
+  const centerWorldX = (minWorldX + maxWorldX) / 2;
+  const centerWorldZ = worldZFromBlock(bridge.centerZ);
+  const span = maxWorldX - minWorldX;
+  const bridgeWidth = bridge.widthBlocks * tileSize;
+  const deckY = bridgeDeckHeightMeters();
+
+  const concreteMaterial = new THREE.MeshStandardMaterial({ color: 0x8b9093, roughness: 0.78 });
+  const asphaltMaterial = new THREE.MeshStandardMaterial({ color: 0x555a5d, roughness: 0.9 });
+  const railMaterial = new THREE.MeshStandardMaterial({ color: 0x39434a, roughness: 0.62, metalness: 0.28 });
+  const markingMaterial = new THREE.MeshBasicMaterial({ color: 0xf4edc9 });
+
+  const raisedRoadCells = [];
+  for (let z = 0; z < tilesDeep; z += 1) {
+    for (let x = 0; x < tilesWide; x += 1) {
+      if (isUrbanRoadBlock(x, z) && !isRiverBlock(x, z)) raisedRoadCells.push([x, z]);
+    }
+  }
+  const raisedRoadSurface = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(tileSize - 0.012, urban.surfaceRaiseMeters, tileSize - 0.012),
+    asphaltMaterial,
+    raisedRoadCells.length
+  );
+  raisedRoadSurface.name = 'TerrainFollowingUrbanRoadSurface';
+  raisedRoadCells.forEach(([x, z], index) => {
+    const groundY = getTerrainHeightBlocks(x, z) * tileSize;
+    tileMatrix.makeTranslation(
+      worldXFromBlock(x + 0.5),
+      groundY + urban.surfaceRaiseMeters / 2 + 0.055,
+      worldZFromBlock(z + 0.5)
+    );
+    raisedRoadSurface.setMatrixAt(index, tileMatrix);
+  });
+  raisedRoadSurface.instanceMatrix.needsUpdate = true;
+  raisedRoadSurface.castShadow = true;
+  raisedRoadSurface.receiveShadow = true;
+  group.add(raisedRoadSurface);
+
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(span, 0.18, bridgeWidth), concreteMaterial);
+  deck.name = 'RiverBridgeDeck';
+  deck.position.set(centerWorldX, deckY - 0.09, centerWorldZ);
+  deck.castShadow = true;
+  deck.receiveShadow = true;
+  group.add(deck);
+
+  const asphalt = new THREE.Mesh(new THREE.BoxGeometry(span - tileSize, 0.055, bridgeWidth * 0.72), asphaltMaterial);
+  asphalt.name = 'RiverBridgeRoadSurface';
+  asphalt.position.set(centerWorldX, deckY + 0.022, centerWorldZ);
+  asphalt.receiveShadow = true;
+  group.add(asphalt);
+
+  for (const side of [-1, 1]) {
+    const sidewalk = new THREE.Mesh(new THREE.BoxGeometry(span, 0.12, bridgeWidth * 0.13), concreteMaterial);
+    sidewalk.position.set(centerWorldX, deckY + 0.06, centerWorldZ + side * bridgeWidth * 0.425);
+    sidewalk.castShadow = true;
+    sidewalk.receiveShadow = true;
+    group.add(sidewalk);
+
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(span, 0.12, 0.12), railMaterial);
+    rail.position.set(centerWorldX, deckY + 0.72, centerWorldZ + side * (bridgeWidth / 2 - 0.05));
+    rail.castShadow = true;
+    group.add(rail);
+  }
+
+  const postCountPerSide = Math.max(4, Math.floor(span / 1.8) + 1);
+  const postGeometry = new THREE.BoxGeometry(0.14, 0.82, 0.14);
+  const posts = new THREE.InstancedMesh(postGeometry, railMaterial, postCountPerSide * 2);
+  let postIndex = 0;
+  for (const side of [-1, 1]) {
+    for (let index = 0; index < postCountPerSide; index += 1) {
+      const t = index / (postCountPerSide - 1);
+      tileMatrix.makeTranslation(
+        THREE.MathUtils.lerp(minWorldX, maxWorldX, t),
+        deckY + 0.43,
+        centerWorldZ + side * (bridgeWidth / 2 - 0.05)
+      );
+      posts.setMatrixAt(postIndex++, tileMatrix);
+    }
+  }
+  posts.instanceMatrix.needsUpdate = true;
+  posts.castShadow = true;
+  group.add(posts);
+
+  const pierGeometry = new THREE.BoxGeometry(tileSize * 1.8, deckY + 0.28, bridgeWidth * 0.68);
+  for (const t of [0.32, 0.68]) {
+    const pier = new THREE.Mesh(pierGeometry, concreteMaterial);
+    pier.position.set(THREE.MathUtils.lerp(minWorldX, maxWorldX, t), (deckY - 0.1) / 2, centerWorldZ);
+    pier.castShadow = true;
+    pier.receiveShadow = true;
+    group.add(pier);
+  }
+
+  const bridgeMarkCount = Math.max(2, Math.floor(span / (tileSize * 5)));
+  const bridgeMarks = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(tileSize * 2.4, 0.018, 0.075),
+    markingMaterial,
+    bridgeMarkCount
+  );
+  for (let index = 0; index < bridgeMarkCount; index += 1) {
+    const t = (index + 0.5) / bridgeMarkCount;
+    tileMatrix.makeTranslation(THREE.MathUtils.lerp(minWorldX, maxWorldX, t), deckY + 0.06, centerWorldZ);
+    bridgeMarks.setMatrixAt(index, tileMatrix);
+  }
+  bridgeMarks.instanceMatrix.needsUpdate = true;
+  group.add(bridgeMarks);
+
+  // Road markings make the new streets readable from the TPS camera without
+  // adding thousands of unique meshes.
+  const streetMarks = [];
+  for (let x = urban.crossStreet.minX + 3; x < bounds.minBlockX; x += 6) {
+    streetMarks.push({ x, z: urban.crossStreet.centerZ, rotation: Math.PI / 2 });
+  }
+  for (let z = urban.riverfront.minZ + 3; z < urban.riverfront.maxZ; z += 6) {
+    const currentEdge = riverEdgesAtBlockZ(z).left;
+    const nextEdge = riverEdgesAtBlockZ(Math.min(tilesDeep - 1, z + 2)).left;
+    streetMarks.push({
+      x: currentEdge - urban.riverfront.innerOffsetBlocks - urban.riverfront.widthBlocks / 2,
+      z,
+      rotation: Math.atan2((nextEdge - currentEdge) * tileSize, 2 * tileSize)
+    });
+  }
+  for (const road of urban.secondaryRoads) {
+    for (let along = road.min + 3; along < road.max - 2; along += 6) {
+      streetMarks.push(road.orientation === 'vertical'
+        ? { x: road.center, z: along, rotation: 0 }
+        : { x: along, z: road.center, rotation: Math.PI / 2 });
+    }
+  }
+  const streetMarkMesh = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.075, 0.018, tileSize * 2.1),
+    markingMaterial,
+    streetMarks.length
+  );
+  streetMarks.forEach(({ x, z, rotation }, index) => {
+    tileMatrix.makeRotationY(rotation);
+    tileMatrix.setPosition(
+      worldXFromBlock(x),
+      getTerrainHeightBlocks(Math.floor(x), Math.floor(z)) * tileSize + urban.surfaceRaiseMeters + 0.075,
+      worldZFromBlock(z)
+    );
+    streetMarkMesh.setMatrixAt(index, tileMatrix);
+  });
+  streetMarkMesh.instanceMatrix.needsUpdate = true;
+  group.add(streetMarkMesh);
+
+  const mainRoad = getRoadFromHouseBounds();
+  const crosswalkStripeCount = 6;
+  const crosswalk = new THREE.InstancedMesh(
+    new THREE.BoxGeometry((mainRoad.right - mainRoad.left - 1.2) * tileSize, 0.022, tileSize * 0.42),
+    markingMaterial,
+    crosswalkStripeCount
+  );
+  for (let index = 0; index < crosswalkStripeCount; index += 1) {
+    const blockZ = urban.crossStreet.centerZ - urban.crossStreet.widthBlocks / 2 + 1.1 + index * 0.82;
+    const blockX = (mainRoad.left + mainRoad.right) / 2;
+    tileMatrix.makeTranslation(
+      worldXFromBlock(blockX),
+      getTerrainHeightBlocks(Math.floor(blockX), Math.floor(blockZ)) * tileSize + urban.surfaceRaiseMeters + 0.08,
+      worldZFromBlock(blockZ)
+    );
+    crosswalk.setMatrixAt(index, tileMatrix);
+  }
+  crosswalk.name = 'MainIntersectionCrosswalk';
+  crosswalk.instanceMatrix.needsUpdate = true;
+  group.add(crosswalk);
+
+  scene.add(group);
+  return group;
+}
+
+// Urban scenery is an optional visual layer.  Keep a bad geometry/config
+// value from aborting the rest of the module before the character buttons
+// receive their click handlers.
+let urbanInfrastructure = null;
+try {
+  urbanInfrastructure = createUrbanInfrastructure();
+} catch (error) {
+  console.error('Could not create the urban road infrastructure.', error);
+}
 
 // Map grid: north is -Z, the river is on the east (+X), and one cell is 15 blocks.
 // The player starts in the south-east cell; this house occupies the cell directly left of it.
@@ -2305,6 +2586,132 @@ function createConfiguredBuilding(config) {
 }
 
 mapConfig.structures.additionalHouses.forEach(createConfiguredBuilding);
+
+// --- Urban streetscape ---------------------------------------------------
+// Sidewalks are split around the main intersection so the curb never blocks
+// the evacuation route. Trees and lamps use shared instanced geometry to add
+// a readable city scale without creating hundreds of individual draw calls.
+function createUrbanStreetscape() {
+  const group = new THREE.Group();
+  group.name = 'UrbanStreetscape';
+  const road = getRoadFromHouseBounds();
+  const urban = mapConfig.areas.urbanRoads;
+  const bridge = bridgeBoundsAt();
+  const crossMinZ = urban.crossStreet.centerZ - urban.crossStreet.widthBlocks / 2;
+  const crossMaxZ = urban.crossStreet.centerZ + urban.crossStreet.widthBlocks / 2;
+  const sidewalkWidthBlocks = 2.4;
+  const sidewalkHeight = 0.18;
+  const sidewalkMaterial = new THREE.MeshStandardMaterial({
+    color: 0xb9b5a9,
+    roughness: 0.94,
+    metalness: 0
+  });
+
+  function addSidewalk(name, minX, maxX, minZ, maxZ) {
+    if (maxX <= minX || maxZ <= minZ) return;
+    const centerX = (minX + maxX) / 2;
+    const centerZ = (minZ + maxZ) / 2;
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry((maxX - minX) * tileSize, sidewalkHeight, (maxZ - minZ) * tileSize),
+      sidewalkMaterial
+    );
+    mesh.name = name;
+    mesh.position.set(
+      worldXFromBlock(centerX),
+      getTerrainHeightBlocks(Math.floor(centerX), Math.floor(centerZ)) * tileSize + sidewalkHeight / 2 + 0.055,
+      worldZFromBlock(centerZ)
+    );
+    mesh.receiveShadow = true;
+    mesh.castShadow = true;
+    group.add(mesh);
+  }
+
+  const verticalSidewalks = [
+    [road.left - sidewalkWidthBlocks, road.left],
+    [road.right, road.right + sidewalkWidthBlocks]
+  ];
+  for (const [minX, maxX] of verticalSidewalks) {
+    addSidewalk('MainRoadSidewalkNorth', minX, maxX, road.top, crossMinZ);
+    addSidewalk('MainRoadSidewalkSouth', minX, maxX, crossMaxZ, road.bottom);
+  }
+
+  const horizontalSegments = [
+    [urban.crossStreet.minX, road.left],
+    [road.right, bridge.minBlockX]
+  ];
+  for (const [minX, maxX] of horizontalSegments) {
+    addSidewalk('CrossStreetSidewalkNorth', minX, maxX, crossMinZ - sidewalkWidthBlocks, crossMinZ);
+    addSidewalk('CrossStreetSidewalkSouth', minX, maxX, crossMaxZ, crossMaxZ + sidewalkWidthBlocks);
+  }
+
+  const sites = [];
+  function isClearOfBuilding(blockX, blockZ, marginMeters = 0.8) {
+    const worldX = worldXFromBlock(blockX);
+    const worldZ = worldZFromBlock(blockZ);
+    return !houseColliders.some((collider) => (
+      worldX >= collider.minX - marginMeters && worldX <= collider.maxX + marginMeters
+      && worldZ >= collider.minZ - marginMeters && worldZ <= collider.maxZ + marginMeters
+    ));
+  }
+  function addSite(blockX, blockZ) {
+    if (isClearOfBuilding(blockX, blockZ)) sites.push({ blockX, blockZ });
+  }
+
+  for (let z = road.top + 6; z < road.bottom - 4; z += 9) {
+    if (z > crossMinZ - 5 && z < crossMaxZ + 5) continue;
+    addSite(road.left - sidewalkWidthBlocks / 2, z);
+    addSite(road.right + sidewalkWidthBlocks / 2, z);
+  }
+  for (let x = urban.crossStreet.minX + 6; x < bridge.minBlockX - 4; x += 10) {
+    if (x > road.left - 5 && x < road.right + 5) continue;
+    addSite(x, crossMinZ - sidewalkWidthBlocks / 2);
+    addSite(x, crossMaxZ + sidewalkWidthBlocks / 2);
+  }
+
+  const treeSites = sites.filter((_, index) => index % 2 === 0);
+  const lampSites = sites.filter((_, index) => index % 2 === 1);
+  const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x65442c, roughness: 0.96 });
+  const leafMaterial = new THREE.MeshStandardMaterial({ color: 0x3d873c, roughness: 0.9 });
+  const lampMaterial = new THREE.MeshStandardMaterial({ color: 0x3c474d, roughness: 0.62, metalness: 0.34 });
+  const lampGlowMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffeab0,
+    emissive: 0xffc95c,
+    emissiveIntensity: 0.7,
+    roughness: 0.45
+  });
+  const matrix = new THREE.Matrix4();
+
+  function makeInstances(name, geometry, material, positions, heightOffset) {
+    if (!positions.length) return null;
+    const mesh = new THREE.InstancedMesh(geometry, material, positions.length);
+    mesh.name = name;
+    positions.forEach(({ blockX, blockZ }, index) => {
+      const groundY = getTerrainHeightBlocks(Math.floor(blockX), Math.floor(blockZ)) * tileSize + sidewalkHeight + 0.055;
+      matrix.makeTranslation(worldXFromBlock(blockX), groundY + heightOffset, worldZFromBlock(blockZ));
+      mesh.setMatrixAt(index, matrix);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    return mesh;
+  }
+
+  makeInstances('StreetTreeTrunks', new THREE.BoxGeometry(0.28, 1.15, 0.28), trunkMaterial, treeSites, 0.575);
+  makeInstances('StreetTreeCrowns', new THREE.BoxGeometry(1.15, 1.05, 1.15), leafMaterial, treeSites, 1.55);
+  makeInstances('StreetLampPoles', new THREE.CylinderGeometry(0.055, 0.075, 2.45, 8), lampMaterial, lampSites, 1.225);
+  makeInstances('StreetLampHeads', new THREE.BoxGeometry(0.36, 0.18, 0.36), lampGlowMaterial, lampSites, 2.42);
+
+  scene.add(group);
+  return group;
+}
+
+let urbanStreetscape = null;
+try {
+  urbanStreetscape = createUrbanStreetscape();
+} catch (error) {
+  console.error('Could not create the urban streetscape.', error);
+}
 
 // --- Evacuation shelter ------------------------------------------------
 // Deliberately standalone: not in mapConfig.structures.additionalHouses, so
@@ -2847,7 +3254,9 @@ function routeNodeCost(from, to) {
   const predictedDepth = Math.max(0, forecastLevel - toHeight);
   const floodPenalty = predictedDepth <= 0.15 ? 0 : predictedDepth * predictedDepth * 8;
   const slopePenalty = Math.abs(toHeight - fromHeight) * 3.5;
-  const roadFactor = isRoadBlock(Math.round(toWorld.blockX), Math.round(toWorld.blockZ)) ? 0.68 : 1;
+  const routeBlockX = Math.round(toWorld.blockX);
+  const routeBlockZ = Math.round(toWorld.blockZ);
+  const roadFactor = (isRoadBlock(routeBlockX, routeBlockZ) || isUrbanRoadBlock(routeBlockX, routeBlockZ)) ? 0.68 : 1;
   return baseDistance * roadFactor + floodPenalty + slopePenalty;
 }
 
@@ -5806,6 +6215,7 @@ function isInsideRiverBarrier(x, z) {
   const blockX = blockXFromWorld(x);
   const blockZ = blockZFromWorld(z);
   if (blockZ < 0 || blockZ > tilesDeep - 1) return false;
+  if (isInsideBridgeDeckBlocks(blockX, blockZ)) return false;
 
   const { left, right } = riverEdgesAtBlockZ(blockZ);
   const margin = mapConfig.areas.riverFence.blockMargin;
@@ -5816,6 +6226,7 @@ function isInsideRiverFence(x, z) {
   const blockX = blockXFromWorld(x);
   const blockZ = blockZFromWorld(z);
   if (blockZ < 0 || blockZ > tilesDeep - 1) return false;
+  if (isInsideBridgeDeckBlocks(blockX, blockZ)) return false;
 
   const { left, right } = riverEdgesAtBlockZ(blockZ);
   const fence = mapConfig.areas.riverFence;
@@ -5846,6 +6257,14 @@ function getRampHeightAt(x, z) {
 
 function getWalkableHeight(x, z) {
   let height = Math.max(getTerrainHeightAt(x, z), getRampHeightAt(x, z));
+  const blockX = blockXFromWorld(x);
+  const blockZ = blockZFromWorld(z);
+  if (isUrbanRoadBlock(blockX, blockZ) && !isRiverBlock(blockX, blockZ)) {
+    height = Math.max(height, getTerrainHeightAt(x, z) + mapConfig.areas.urbanRoads.surfaceRaiseMeters);
+  }
+  if (isInsideBridgeDeckBlocks(blockX, blockZ)) {
+    height = Math.max(height, bridgeDeckHeightMeters());
+  }
   for (const zone of walkableStepZones) {
     if (x >= zone.minX && x <= zone.maxX && z >= zone.minZ && z <= zone.maxZ) {
       height = Math.max(height, zone.height);
@@ -5898,11 +6317,24 @@ function initMinimap() {
     [stairEndX - stair.across.x * stairHalf, stairEndZ - stair.across.z * stairHalf]
   ].map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
   const plateauPath = getPlateauPathBounds();
+  const urban = mapConfig.areas.urbanRoads;
+  const bridgeBounds = bridgeBoundsAt();
+  const riverfrontPoints = [];
+  for (let z = urban.riverfront.minZ; z <= urban.riverfront.maxZ; z += 4) {
+    const riverEdge = riverEdgesAtBlockZ(z).left;
+    riverfrontPoints.push(`${(riverEdge - urban.riverfront.innerOffsetBlocks - urban.riverfront.widthBlocks / 2).toFixed(2)},${z}`);
+  }
   minimapRoads.innerHTML = `
     <rect x="${road.left.toFixed(2)}" y="${road.top.toFixed(2)}" width="${(road.right - road.left).toFixed(2)}" height="${(road.bottom - road.top).toFixed(2)}" fill="#b8afa4" opacity=".9"/>
     <polygon points="${connectorPoints}" fill="#b8afa4" opacity=".94"/>
     <polygon points="${stairPoints}" fill="#b8afa4" opacity=".92"/>
     <rect x="${plateauPath.minBlockX}" y="0" width="${plateauPath.maxBlockX - plateauPath.minBlockX}" height="${plateauPath.endBlockZ}" fill="#b8afa4" opacity=".94"/>
+    <rect x="${urban.crossStreet.minX}" y="${(urban.crossStreet.centerZ - urban.crossStreet.widthBlocks / 2).toFixed(2)}" width="${urban.crossStreet.maxX - urban.crossStreet.minX}" height="${urban.crossStreet.widthBlocks}" fill="#777d80" opacity=".96"/>
+    ${urban.secondaryRoads.map((secondary) => secondary.orientation === 'vertical'
+      ? `<rect x="${secondary.center - secondary.widthBlocks / 2}" y="${secondary.min}" width="${secondary.widthBlocks}" height="${secondary.max - secondary.min}" fill="#777d80" opacity=".96"/>`
+      : `<rect x="${secondary.min}" y="${secondary.center - secondary.widthBlocks / 2}" width="${secondary.max - secondary.min}" height="${secondary.widthBlocks}" fill="#777d80" opacity=".96"/>`).join('')}
+    <polyline points="${riverfrontPoints.join(' ')}" fill="none" stroke="#777d80" stroke-width="${urban.riverfront.widthBlocks}" stroke-linecap="round" stroke-linejoin="round" opacity=".96"/>
+    <rect x="${bridgeBounds.minBlockX.toFixed(2)}" y="${bridgeBounds.minBlockZ.toFixed(2)}" width="${(bridgeBounds.maxBlockX - bridgeBounds.minBlockX).toFixed(2)}" height="${(bridgeBounds.maxBlockZ - bridgeBounds.minBlockZ).toFixed(2)}" fill="#50575b" stroke="#e8e1c8" stroke-width=".8"/>
   `;
   const leftEdgePoints = [];
   const rightEdgePoints = [];

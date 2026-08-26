@@ -1,5 +1,4 @@
-const CACHE_NAME = 'suibo-training-v1';
-const THREE_MODULE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+const CACHE_NAME = 'suibo-training-v2';
 const APP_ASSETS = [
   './',
   './index.html',
@@ -8,7 +7,7 @@ const APP_ASSETS = [
   './scenarios.js',
   './manifest.webmanifest',
   './icon.svg',
-  THREE_MODULE_URL
+  './vendor/three.module.js'
 ];
 
 self.addEventListener('install', (event) => {
@@ -59,6 +58,5 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Versioned CDN modules are immutable, so prefer their cached copy.
-  event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));
+  event.respondWith(fetch(event.request));
 });
