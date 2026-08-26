@@ -1,4 +1,4 @@
-const CACHE_NAME = 'suibo-training-v2';
+const CACHE_NAME = 'suibo-training-v9';
 const APP_ASSETS = [
   './',
   './index.html',

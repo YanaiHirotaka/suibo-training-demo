@@ -60,6 +60,7 @@ const minimapHazard = document.querySelector('#minimapHazard');
 const hazardToggle = document.querySelector('#hazardToggle');
 const hazardLegend = document.querySelector('#hazardLegend');
 const minimapRoads = document.querySelector('#minimapRoads');
+const minimapPaintOverrides = document.querySelector('#minimapPaintOverrides');
 const minimapRiver = document.querySelector('#minimapRiver');
 const minimapSafeRoute = document.querySelector('#minimapSafeRoute');
 const minimapHouse = document.querySelector('#minimapHouse');
@@ -456,6 +457,8 @@ const mapConfig = Object.freeze({
     },
     urbanRoads: {
       surfaceRaiseMeters: 0.09,
+      sidewalkWidthBlocks: 3.2,
+      sidewalkHeightMeters: 0.2,
       crossStreet: { minX: 118, maxX: 210, centerZ: 148, widthBlocks: 11 },
       riverfront: { minZ: 104, maxZ: 190, innerOffsetBlocks: 4, widthBlocks: 10 },
       secondaryRoads: [
@@ -872,6 +875,28 @@ function isUrbanRoadBlock(blockX, blockZ) {
   return isCrossStreet || isRiverfront || isSecondaryRoad;
 }
 
+function isUrbanSidewalkBlock(blockX, blockZ) {
+  const urban = mapConfig.areas.urbanRoads;
+  const road = getRoadFromHouseBounds();
+  const bridge = bridgeBoundsAt();
+  const width = urban.sidewalkWidthBlocks;
+  const crossMinZ = urban.crossStreet.centerZ - urban.crossStreet.widthBlocks / 2;
+  const crossMaxZ = urban.crossStreet.centerZ + urban.crossStreet.widthBlocks / 2;
+  const outsideIntersection = (blockZ >= road.top && blockZ <= crossMinZ)
+    || (blockZ >= crossMaxZ && blockZ <= road.bottom);
+  const besideMainRoad = outsideIntersection && (
+    (blockX >= road.left - width && blockX <= road.left)
+    || (blockX >= road.right && blockX <= road.right + width)
+  );
+  const outsideMainRoad = (blockX >= urban.crossStreet.minX && blockX <= road.left)
+    || (blockX >= road.right && blockX <= bridge.minBlockX);
+  const besideCrossStreet = outsideMainRoad && (
+    (blockZ >= crossMinZ - width && blockZ <= crossMinZ)
+    || (blockZ >= crossMaxZ && blockZ <= crossMaxZ + width)
+  );
+  return besideMainRoad || besideCrossStreet;
+}
+
 function bridgeBoundsAt(blockZ = mapConfig.areas.urbanRoads.bridge.centerZ) {
   const bridge = mapConfig.areas.urbanRoads.bridge;
   const { left, right } = riverEdgesAtBlockZ(blockZ);
@@ -1068,8 +1093,8 @@ const tileGeometry = new THREE.BoxGeometry(tileSize - 0.003, tileSurfaceThicknes
 const tileMatrix = new THREE.Matrix4();
 const tileColor = new THREE.Color();
 
-// Hand-painted road/grass overrides from the in-game edit mode. Keyed by
-// "x,z", value is 'road' or 'grass'. This is a full export (エクスポート
+// Hand-painted road/grass/black-asphalt overrides from the in-game edit mode. Keyed
+// by "x,z", value is 'road', 'grass', or 'paving'. This is a full export (エクスポート
 // button) of the live tilePaintOverrides map, already in final/absolute
 // block coordinates (post west-expansion) - no shifting needed.
 const DEFAULT_TILE_OVERRIDES = [
@@ -1617,7 +1642,7 @@ function tileTypeAt(x, z) {
   // River is the only base type that can never be painted over (it isn't
   // a ground tile at all). Stair steps can be repainted: when they are,
   // createBlockRamp skips drawing its own asphalt for that cell so the
-  // flat road/grass tile system takes over instead.
+  // flat road/grass/paving tile system takes over instead.
   if (base === 'river') return base;
   return tilePaintOverrides.get(x + ',' + z) || base;
 }
@@ -1625,6 +1650,7 @@ function tileTypeAt(x, z) {
 function computeTileCells() {
   const grass = [];
   const road = [];
+  const paving = [];
   const river = [];
   for (let z = 0; z < tilesDeep; z++) {
     for (let x = 0; x < tilesWide; x++) {
@@ -1632,9 +1658,10 @@ function computeTileCells() {
       if (type === 'river') river.push([x, z]);
       else if (type === 'road') road.push([x, z]);
       else if (type === 'grass') grass.push([x, z]);
+      else if (type === 'paving') paving.push([x, z]);
     }
   }
-  return { grass, road, river };
+  return { grass, road, paving, river };
 }
 
 function createGroundTiles(name, cells, material, getY, setColor) {
@@ -1651,7 +1678,7 @@ function createGroundTiles(name, cells, material, getY, setColor) {
     mesh.setColorAt(index, tileColor);
   });
   mesh.instanceMatrix.needsUpdate = true;
-  mesh.instanceColor.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   mesh.receiveShadow = true;
   field.add(mesh);
   return mesh;
@@ -1666,6 +1693,7 @@ function terrainTileY(blockX, blockZ, baseY) {
 
 const grassTileMaterial = new THREE.MeshLambertMaterial({ map: grassTexture, color: 0xffffff });
 const roadTileMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff });
+const pavingTileMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff });
 const riverTileMaterial = new THREE.MeshStandardMaterial({
   color: 0x2aa5b8,
   roughness: 0.08,
@@ -1678,14 +1706,18 @@ const riverTileMaterial = new THREE.MeshStandardMaterial({
 
 let grassTiles = null;
 let roadTiles = null;
+let pavingTiles = null;
 
-// Grass and road tiles are rebuilt whenever the paint overrides change.
+// Grass, road, and black asphalt tiles are rebuilt whenever the paint overrides change.
 // The shared tileGeometry/materials are reused, so only the InstancedMesh
 // itself is thrown away.
 function buildPaintableTiles() {
   const cells = computeTileCells();
+  canvas.dataset.pavingTileCount = String(cells.paving.length);
+  renderMinimapPaintOverrides();
   if (grassTiles) field.remove(grassTiles);
   if (roadTiles) field.remove(roadTiles);
+  if (pavingTiles) field.remove(pavingTiles);
 
   grassTiles = createGroundTiles(
     'GrassGroundBlocks',
@@ -1707,6 +1739,17 @@ function buildPaintableTiles() {
       const roadBase = 0.58 + ((x * 11 + z * 13) % 9) * 0.018;
       const warm = ((x + z) % 4) * 0.015;
       color.setRGB(roadBase + warm, roadBase * 0.96 + warm, roadBase * 0.90);
+    }
+  );
+
+  pavingTiles = createGroundTiles(
+    'BlackAsphaltGroundBlocks',
+    cells.paving,
+    pavingTileMaterial,
+    (x, z) => terrainTileY(x, z, 0.031 + ((x * 19 + z * 23) % 3) * 0.001),
+    (x, z, color) => {
+      const shade = 0.105 + ((x * 7 + z * 11) % 5) * 0.009;
+      color.setRGB(shade * 0.92, shade * 0.97, shade);
     }
   );
 }
@@ -2589,8 +2632,8 @@ mapConfig.structures.additionalHouses.forEach(createConfiguredBuilding);
 
 // --- Urban streetscape ---------------------------------------------------
 // Sidewalks are split around the main intersection so the curb never blocks
-// the evacuation route. Trees and lamps use shared instanced geometry to add
-// a readable city scale without creating hundreds of individual draw calls.
+// the evacuation route. Trees sit on the outside edge and lamps on the road
+// edge, leaving one continuous pedestrian lane between the two rows.
 function createUrbanStreetscape() {
   const group = new THREE.Group();
   group.name = 'UrbanStreetscape';
@@ -2599,10 +2642,10 @@ function createUrbanStreetscape() {
   const bridge = bridgeBoundsAt();
   const crossMinZ = urban.crossStreet.centerZ - urban.crossStreet.widthBlocks / 2;
   const crossMaxZ = urban.crossStreet.centerZ + urban.crossStreet.widthBlocks / 2;
-  const sidewalkWidthBlocks = 2.4;
-  const sidewalkHeight = 0.18;
+  const sidewalkWidthBlocks = urban.sidewalkWidthBlocks;
+  const sidewalkHeight = urban.sidewalkHeightMeters;
   const sidewalkMaterial = new THREE.MeshStandardMaterial({
-    color: 0xb9b5a9,
+    color: 0xc8c4b8,
     roughness: 0.94,
     metalness: 0
   });
@@ -2644,7 +2687,8 @@ function createUrbanStreetscape() {
     addSidewalk('CrossStreetSidewalkSouth', minX, maxX, crossMaxZ, crossMaxZ + sidewalkWidthBlocks);
   }
 
-  const sites = [];
+  const treeSites = [];
+  const lampSites = [];
   function isClearOfBuilding(blockX, blockZ, marginMeters = 0.8) {
     const worldX = worldXFromBlock(blockX);
     const worldZ = worldZFromBlock(blockZ);
@@ -2653,23 +2697,26 @@ function createUrbanStreetscape() {
       && worldZ >= collider.minZ - marginMeters && worldZ <= collider.maxZ + marginMeters
     ));
   }
-  function addSite(blockX, blockZ) {
-    if (isClearOfBuilding(blockX, blockZ)) sites.push({ blockX, blockZ });
+  function addFurnishing(target, blockX, blockZ) {
+    if (isClearOfBuilding(blockX, blockZ, 0.55)) target.push({ blockX, blockZ });
   }
 
-  for (let z = road.top + 6; z < road.bottom - 4; z += 9) {
+  const edgeInsetBlocks = 0.45;
+  for (let z = road.top + 6; z < road.bottom - 4; z += 11) {
     if (z > crossMinZ - 5 && z < crossMaxZ + 5) continue;
-    addSite(road.left - sidewalkWidthBlocks / 2, z);
-    addSite(road.right + sidewalkWidthBlocks / 2, z);
+    addFurnishing(treeSites, road.left - sidewalkWidthBlocks + edgeInsetBlocks, z);
+    addFurnishing(lampSites, road.left - edgeInsetBlocks, z);
+    addFurnishing(treeSites, road.right + sidewalkWidthBlocks - edgeInsetBlocks, z);
+    addFurnishing(lampSites, road.right + edgeInsetBlocks, z);
   }
-  for (let x = urban.crossStreet.minX + 6; x < bridge.minBlockX - 4; x += 10) {
+  for (let x = urban.crossStreet.minX + 6; x < bridge.minBlockX - 4; x += 12) {
     if (x > road.left - 5 && x < road.right + 5) continue;
-    addSite(x, crossMinZ - sidewalkWidthBlocks / 2);
-    addSite(x, crossMaxZ + sidewalkWidthBlocks / 2);
+    addFurnishing(treeSites, x, crossMinZ - sidewalkWidthBlocks + edgeInsetBlocks);
+    addFurnishing(lampSites, x, crossMinZ - edgeInsetBlocks);
+    addFurnishing(treeSites, x, crossMaxZ + sidewalkWidthBlocks - edgeInsetBlocks);
+    addFurnishing(lampSites, x, crossMaxZ + edgeInsetBlocks);
   }
 
-  const treeSites = sites.filter((_, index) => index % 2 === 0);
-  const lampSites = sites.filter((_, index) => index % 2 === 1);
   const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x65442c, roughness: 0.96 });
   const leafMaterial = new THREE.MeshStandardMaterial({ color: 0x3d873c, roughness: 0.9 });
   const lampMaterial = new THREE.MeshStandardMaterial({ color: 0x3c474d, roughness: 0.62, metalness: 0.34 });
@@ -3456,7 +3503,7 @@ function updateMissionProgress() {
 }
 
 function completeHazardMission() {
-  if (missionHazardChecked || !characterChosen) return;
+  if (missionHazardChecked || !characterChosen || editMode) return;
   missionHazardChecked = true;
   missionInspectHazard.classList.add('is-done');
   showNpcToast('ハザードマップを確認しました。安全ルートを進みましょう。', 3600);
@@ -3904,7 +3951,7 @@ function createBlockRamp() {
       if (isRoadBlock(x, z)) continue;
       const level = heightAt(x, z);
       // A step repainted via the in-game edit tools is drawn by the flat
-      // road/grass ground tile system instead (buildPaintableTiles), at the
+      // road/grass/paving ground tile system instead (buildPaintableTiles), at the
       // same height - skip the asphalt top here so the two don't overlap.
       if (tileTypeAt(x, z) === 'stair') topCells.push({ x, z, level });
 
@@ -4404,7 +4451,7 @@ function refreshHealthDisplay() {
 }
 
 function useEmergencyItem(index) {
-  if (!characterChosen || trainingCompleteShown || gamePaused) return;
+  if (!characterChosen || trainingCompleteShown || gamePaused || editMode) return;
   const item = selectedEmergencyItemList()[index];
   if (!item) return;
 
@@ -4859,6 +4906,7 @@ function clearTrainingProgress() {
 
 function saveTrainingProgress(now = performance.now()) {
   if (!characterChosen || trainingCompleteShown) return;
+  const clockNow = trainingClockReference(now);
   const progress = {
     version: 1,
     savedAt: Date.now(),
@@ -4867,8 +4915,8 @@ function saveTrainingProgress(now = performance.now()) {
     selectedItems: [...selectedEmergencyItems],
     usedItems: [...usedEmergencyItems],
     flashlightEnabled,
-    remainingMs: Math.max(0, trainingDeadlineTime - now),
-    elapsedMs: Math.max(0, now - trainingStartTime),
+    remainingMs: Math.max(0, trainingDeadlineTime - clockNow),
+    elapsedMs: Math.max(0, clockNow - trainingStartTime),
     player: {
       x: player.position.x,
       y: player.position.y,
@@ -5039,6 +5087,7 @@ function selectCharacter(type) {
 
 function setGamePaused(paused) {
   if (!characterChosen || trainingCompleteShown || gamePaused === paused) return;
+  if (paused && editMode) setEditMode(false);
   gamePaused = paused;
   pauseMenu.classList.toggle('is-hidden', !paused);
   pauseToggle.innerHTML = `${paused ? '▶ 再開' : '☰ メニュー'} <kbd>Esc</kbd>`;
@@ -5253,12 +5302,19 @@ touchControls.querySelector('[data-touch-action="interact"]').addEventListener('
 
 // --- Tile paint edit mode -------------------------------------------------
 // Toggled from the "編集モード" button. While active: left click / drag paints
-// road or grass onto the field; right-button drag rotates the camera.
+// road, grass, or black asphalt onto the field; right-button drag rotates the camera.
 let editMode = false;
+let editPauseStartedAt = 0;
 let painting = false;
 let paintDirty = false;
 const paintRaycaster = new THREE.Raycaster();
 const paintPointer = new THREE.Vector2();
+
+function trainingClockReference(now = performance.now()) {
+  if (gamePaused && pauseStartedAt) return pauseStartedAt;
+  if (editMode && editPauseStartedAt) return editPauseStartedAt;
+  return now;
+}
 
 function savePaintOverrides() {
   try {
@@ -5403,6 +5459,7 @@ function paintAt(clientX, clientY) {
 
 function applyPaintIfDirty() {
   if (!paintDirty && !heightDirty && !floatingDirty) return;
+  const hazardNeedsRefresh = heightDirty;
   paintDirty = false;
   heightDirty = false;
   if (floatingDirty) {
@@ -5413,6 +5470,7 @@ function applyPaintIfDirty() {
   buildPaintableTiles();
   buildBlockRamp();
   updateTufts();
+  if (hazardNeedsRefresh) buildHazardOverlay();
   savePaintOverrides();
 }
 
@@ -5480,7 +5538,7 @@ let rangeHeight = 1;
 let rangeYAnchorScreenY = 0;
 let rangeYAnchorHeight = 1;
 // 'block': the existing 2-stage build flow (footprint, then height).
-// 'tile': footprint only - repaints the ground material (road/grass) over
+// 'tile': footprint only - repaints the ground material (road/grass/paving) over
 // the selected area, exactly like the single-tile brush but for a whole
 // rectangle at once, with no height stage. Latched from the radio when the
 // footprint is confirmed, so switching modes mid-drag can't change what's
@@ -5635,7 +5693,7 @@ function placeRangeBlocks() {
   setRangeStatus(`高さ ${rangeHeight} ブロックで配置しました。続けて配置するか「選択をやり直す」で範囲を選び直せます`);
 }
 
-// Repaints the ground material only (road/grass), leaving height untouched -
+// Repaints the ground material only (road/grass/paving), leaving height untouched -
 // the range-select equivalent of the single-tile brush.
 function placeRangeTiles() {
   const material = document.querySelector('input[name="paintMaterial"]:checked').value;
@@ -6105,10 +6163,27 @@ canvas.addEventListener('wheel', (event) => {
 }, { passive: true });
 
 function setEditMode(enabled) {
+  if (editMode === enabled || (enabled && gamePaused)) return;
+  const now = performance.now();
   editMode = enabled;
   editTools.classList.toggle('is-hidden', !editMode);
   editToggle.classList.toggle('is-active', editMode);
+  editToggle.setAttribute('aria-pressed', String(editMode));
+  editToggle.textContent = editMode ? '編集中（訓練停止）' : '編集モード';
+  if (editMode) {
+    editPauseStartedAt = characterChosen && !trainingCompleteShown ? now : 0;
+    releaseAllKeys();
+    setRainAudioLevel(0);
+    if (document.pointerLockElement) document.exitPointerLock();
+  }
   if (!editMode) {
+    if (editPauseStartedAt) {
+      const editDuration = now - editPauseStartedAt;
+      trainingStartTime += editDuration;
+      trainingDeadlineTime += editDuration;
+      editPauseStartedAt = 0;
+    }
+    lastTime = now;
     resetRangeSelection();
     hideBrushHighlight();
     deselectStructure();
@@ -6262,6 +6337,9 @@ function getWalkableHeight(x, z) {
   if (isUrbanRoadBlock(blockX, blockZ) && !isRiverBlock(blockX, blockZ)) {
     height = Math.max(height, getTerrainHeightAt(x, z) + mapConfig.areas.urbanRoads.surfaceRaiseMeters);
   }
+  if (isUrbanSidewalkBlock(blockX, blockZ)) {
+    height = Math.max(height, getTerrainHeightAt(x, z) + mapConfig.areas.urbanRoads.sidewalkHeightMeters + 0.055);
+  }
   if (isInsideBridgeDeckBlocks(blockX, blockZ)) {
     height = Math.max(height, bridgeDeckHeightMeters());
   }
@@ -6366,6 +6444,51 @@ function initMinimap() {
     </g>`;
   }).join('');
   minimapSizeLabel.textContent = `${tilesWide} × ${tilesDeep} blocks`;
+}
+
+// Draw only the edited cells over the static map. Adjacent cells of the same
+// material are merged into one SVG rectangle to keep large edits lightweight.
+function renderMinimapPaintOverrides() {
+  if (!minimapPaintOverrides) return;
+  const colors = {
+    road: '#a69b8f',
+    grass: '#83b96f',
+    paving: '#11171b'
+  };
+  const rows = new Map();
+  for (const [key, material] of tilePaintOverrides) {
+    if (!colors[material]) continue;
+    const separator = key.indexOf(',');
+    const x = Number(key.slice(0, separator));
+    const z = Number(key.slice(separator + 1));
+    if (!Number.isInteger(x) || !Number.isInteger(z)) continue;
+    if (!rows.has(z)) rows.set(z, []);
+    rows.get(z).push({ x, material });
+  }
+
+  const rects = [];
+  for (const [z, cells] of [...rows.entries()].sort((a, b) => a[0] - b[0])) {
+    cells.sort((a, b) => a.x - b.x);
+    let startX = cells[0].x;
+    let endX = startX;
+    let material = cells[0].material;
+    const flush = () => {
+      rects.push(`<rect x="${startX}" y="${z}" width="${endX - startX + 1}" height="1" fill="${colors[material]}"/>`);
+    };
+    for (let index = 1; index < cells.length; index += 1) {
+      const cell = cells[index];
+      if (cell.x === endX + 1 && cell.material === material) {
+        endX = cell.x;
+      } else {
+        flush();
+        startX = endX = cell.x;
+        material = cell.material;
+      }
+    }
+    flush();
+  }
+  minimapPaintOverrides.innerHTML = rects.join('');
+  minimapPaintOverrides.dataset.segmentCount = String(rects.length);
 }
 
 function updatePlayer(dt) {
@@ -6531,22 +6654,30 @@ function animate(now) {
   lastTime = now;
   if (!gamePaused && !trainingCompleteShown) {
     applyPaintIfDirty();
-    updatePlayer(dt);
-    updateTrainingMetrics(dt);
-    updateTrainingCoach(dt);
-    updateCamera(dt);
-    updateFlashlight();
-    updateMinimap();
-    updateSafeRoute(dt);
-    updateMissionGuidance();
-    updateNpcInteraction(dt);
-    updateFloodLevel(dt);
-    updateEvacuationAlert();
-    updateWeather(dt);
-    updateFloodDanger(dt);
-    updateSafeRouteArrowHeights();
-    updateTrainingStatus(now);
-    updateRiver(now);
+    if (editMode) {
+      updateCamera(dt);
+      updateFlashlight();
+      updateMinimap();
+      updateTrainingStatus(trainingClockReference(now));
+      updateRiver(now);
+    } else {
+      updatePlayer(dt);
+      updateTrainingMetrics(dt);
+      updateTrainingCoach(dt);
+      updateCamera(dt);
+      updateFlashlight();
+      updateMinimap();
+      updateSafeRoute(dt);
+      updateMissionGuidance();
+      updateNpcInteraction(dt);
+      updateFloodLevel(dt);
+      updateEvacuationAlert();
+      updateWeather(dt);
+      updateFloodDanger(dt);
+      updateSafeRouteArrowHeights();
+      updateTrainingStatus(now);
+      updateRiver(now);
+    }
   } else {
     updateTrainingStatus(trainingFinishTime || pauseStartedAt);
   }
@@ -6562,7 +6693,7 @@ function animate(now) {
   if (fpsElapsed >= 0.5) {
     const currentFps = Math.round(fpsFrames / fpsElapsed);
     fpsCounter.textContent = `${currentFps} FPS`;
-    if (mobileRenderProfile && characterChosen && !gamePaused) {
+    if (mobileRenderProfile && characterChosen && !gamePaused && !editMode) {
       lowFpsWindows = currentFps < 42 ? lowFpsWindows + 1 : 0;
       if (lowFpsWindows >= 4) reduceMobileRenderLoad();
     }
@@ -6574,10 +6705,8 @@ function animate(now) {
 // --- Hazard map --------------------------------------------------------
 // A coarse (one cell = one grid square, same 15-block cells as the visible
 // minimap grid lines) flood-risk overlay, colored from the same terrain
-// height data the actual flood mechanic uses. Built once at startup - it
-// doesn't react to further in-game terrain edits, same limitation as the
-// rest of the minimap (roads/river/houses are also drawn once in
-// initMinimap()).
+// height data the actual flood mechanic uses. It is rebuilt after height
+// editing so the hazard map stays consistent with the playable terrain.
 const FLOOD_SEVERE_HEIGHT_BLOCKS = 5; // roughly the drowning-risk depth
 function buildHazardOverlay() {
   const cell = mapConfig.cellBlocks;

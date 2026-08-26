@@ -10,7 +10,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon.svg">
-  <link rel="stylesheet" href="./styles.css?v=20260826-6">
+  <link rel="stylesheet" href="./styles.css?v=20260826-13">
 </head>
 <body>
   <canvas id="game" aria-label="水防訓練フィールド"></canvas>
@@ -193,6 +193,7 @@
         <g id="minimapGrid" opacity=".45"></g>
         <path id="minimapRiver" d="" fill="#1f91d1" opacity=".86"/>
         <g id="minimapRoads"></g>
+        <g id="minimapPaintOverrides" aria-label="編集した地面"></g>
         <g class="minimap-house" id="minimapHouse" transform="translate(60 107.5)"></g>
         <g id="minimapAdditionalHouses"></g>
         <g id="minimapNpcMarkers"></g>
@@ -312,6 +313,7 @@
         <div class="segmented">
           <label><input type="radio" name="paintMaterial" value="road" checked><span>通路</span></label>
           <label><input type="radio" name="paintMaterial" value="grass"><span>草地</span></label>
+          <label title="黒いアスファルト道路"><input type="radio" name="paintMaterial" value="paving"><span>黒い道路</span></label>
         </div>
       </fieldset>
 
@@ -329,7 +331,7 @@
         <button id="exportPaint" type="button">エクスポート</button>
         <button id="clearPaint" type="button" class="danger">すべて削除</button>
       </div>
-      <small>左クリック長押し：編集　右ドラッグ：カメラ<br>Esc：編集モードを終了　変更は自動保存されます</small>
+      <small>左クリック長押し：編集　右ドラッグ：カメラ<br>Esc：編集モードを終了　変更は自動保存されます<br>編集中は訓練時間・水位・ミッション進行が停止します</small>
     </div>
   </div>
 
@@ -404,6 +406,6 @@
     </div>
   </div>
 
-  <script type="module" src="./app.js?v=20260826-6"></script>
+  <script type="module" src="./app.js?v=20260826-13"></script>
 </body>
 </html>
