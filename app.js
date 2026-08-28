@@ -1,5 +1,5 @@
-import * as THREE from './vendor/three.module.js?v=20260828-17';
-import { TRAINING_SCENARIOS, getTrainingScenario } from './scenarios.js?v=20260828-17';
+import * as THREE from './vendor/three.module.js?v=20260828-20';
+import { TRAINING_SCENARIOS, getTrainingScenario } from './scenarios.js?v=20260828-20';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -394,6 +394,7 @@ function selectScenario(id) {
   });
   buildHazardOverlay();
   updateTrainingStatus(performance.now());
+  updateWaterObservationPoint(true);
 }
 
 const mapConfig = Object.freeze({
@@ -3064,6 +3065,213 @@ function createSignTexture(draw, width, height) {
   return texture;
 }
 
+// --- Riverside water observation point -----------------------------------
+// The reference design treats water level as something visible in the world,
+// not only as HUD data. This roadside instrument mirrors the live scenario
+// level, forecast and alert state while remaining a lightweight visual prop.
+function createWaterObservationPoint() {
+  const group = new THREE.Group();
+  group.name = 'WaterObservationPoint';
+
+  const road = getRoadFromHouseBounds();
+  const blockX = road.right + 1.65;
+  const blockZ = 172;
+  const worldX = worldXFromBlock(blockX);
+  const worldZ = worldZFromBlock(blockZ);
+  const groundY = getWalkableHeight(worldX, worldZ);
+  group.position.set(worldX, groundY, worldZ);
+
+  const frameMaterial = new THREE.MeshStandardMaterial({
+    color: 0x5c4a35,
+    roughness: 0.82,
+    metalness: 0.04
+  });
+  const darkMaterial = new THREE.MeshStandardMaterial({
+    color: 0x17252a,
+    roughness: 0.54,
+    metalness: 0.28
+  });
+  const paleMaterial = new THREE.MeshStandardMaterial({
+    color: 0xe8e2cf,
+    roughness: 0.78,
+    metalness: 0.02
+  });
+  const gaugeTrackMaterial = new THREE.MeshStandardMaterial({
+    color: 0xcbd7d8,
+    roughness: 0.38,
+    metalness: 0.34
+  });
+  const gaugeFillMaterial = new THREE.MeshStandardMaterial({
+    color: 0x28a6e2,
+    roughness: 0.22,
+    metalness: 0.08,
+    emissive: 0x075d91,
+    emissiveIntensity: 0.7
+  });
+  const beaconMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffd45b,
+    roughness: 0.28,
+    emissive: 0xff8a00,
+    emissiveIntensity: 0.8
+  });
+
+  function addBox(name, size, position, material) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
+    mesh.name = `WaterObservation${name}`;
+    mesh.position.set(...position);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    return mesh;
+  }
+
+  addBox('Footing', [0.62, 0.16, 3.5], [0.12, 0.08, 0], paleMaterial);
+  addBox('LeftPost', [0.2, 2.55, 0.2], [0.08, 1.28, -1.16], frameMaterial);
+  addBox('RightPost', [0.2, 2.55, 0.2], [0.08, 1.28, 1.16], frameMaterial);
+  addBox('PanelBack', [0.24, 2.08, 2.62], [0.08, 1.58, 0], darkMaterial);
+  addBox('PanelTop', [0.36, 0.18, 2.86], [0.08, 2.66, 0], frameMaterial);
+  addBox('PanelBottom', [0.36, 0.18, 2.86], [0.08, 0.51, 0], frameMaterial);
+
+  const surface = document.createElement('canvas');
+  surface.width = 768;
+  surface.height = 608;
+  const context = surface.getContext('2d');
+  const texture = new THREE.CanvasTexture(surface);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearFilter;
+  const face = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.42, 1.88),
+    new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide })
+  );
+  face.name = 'WaterObservationDisplay';
+  face.position.set(-0.045, 1.59, 0);
+  face.rotation.y = -Math.PI / 2;
+  face.renderOrder = 3;
+  group.add(face);
+
+  // A separate physical gauge makes the rise legible even when the display
+  // text is too distant to read from the third-person camera.
+  addBox('GaugeTrack', [0.17, 2.18, 0.38], [-0.16, 1.4, -1.62], gaugeTrackMaterial);
+  const gaugeFill = addBox('GaugeFill', [0.19, 1, 0.3], [-0.27, 0.32, -1.62], gaugeFillMaterial);
+  for (let index = 0; index <= 6; index++) {
+    addBox('GaugeTick', [0.1, 0.035, index % 2 === 0 ? 0.3 : 0.2], [
+      -0.28,
+      0.31 + index * (2 / 6),
+      -1.34
+    ], darkMaterial);
+  }
+
+  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 0.28, 8), beaconMaterial);
+  beacon.name = 'WaterObservationWarningBeacon';
+  beacon.position.set(0.08, 2.93, 0);
+  beacon.castShadow = true;
+  group.add(beacon);
+
+  scene.add(group);
+  return {
+    group,
+    context,
+    texture,
+    gaugeFill,
+    gaugeFillMaterial,
+    beaconMaterial,
+    lastSignature: ''
+  };
+}
+
+function observationAlertForProgress(progress) {
+  return [...EVACUATION_LEVELS].reverse().find((item) => progress >= item.threshold) || EVACUATION_LEVELS[0];
+}
+
+function updateWaterObservationPoint(force = false) {
+  if (!waterObservationPoint) return;
+  const maxLevel = activeScenario.flood.maxLevelMeters;
+  const ratio = maxLevel > 0 ? THREE.MathUtils.clamp(floodWaterLevel / maxLevel, 0, 1) : 0;
+  const alert = observationAlertForProgress(ratio);
+  const signature = [activeScenario.id, floodWaterLevel.toFixed(1), alert.level, floodRisingEnabled].join(':');
+  if (!force && signature === waterObservationPoint.lastSignature) return;
+  waterObservationPoint.lastSignature = signature;
+
+  const { context: ctx, texture, gaugeFill, gaugeFillMaterial, beaconMaterial } = waterObservationPoint;
+  const width = ctx.canvas.width;
+  const height = ctx.canvas.height;
+  const alertColor = alert.level >= 5 ? '#8e44ad'
+    : alert.level >= 4 ? '#d4572a'
+      : alert.level >= 3 ? '#d79b23' : '#168454';
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = '#102830';
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = '#13633f';
+  ctx.fillRect(0, 0, width, 116);
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '900 54px "Yu Gothic UI", "Meiryo", sans-serif';
+  ctx.fillText('水位観測ポイント', width / 2, 58);
+
+  ctx.fillStyle = '#d8e4e4';
+  ctx.font = '700 32px "Yu Gothic UI", "Meiryo", sans-serif';
+  ctx.fillText('現在の水位', 270, 163);
+  ctx.fillStyle = '#45b8ff';
+  ctx.font = '900 110px "Yu Gothic UI", "Meiryo", sans-serif';
+  ctx.fillText(`${floodWaterLevel.toFixed(1)}m`, 270, 252);
+  ctx.fillStyle = '#ffad52';
+  ctx.font = '800 34px "Yu Gothic UI", "Meiryo", sans-serif';
+  ctx.fillText(`開始時より +${floodWaterLevel.toFixed(1)}m`, 270, 332);
+
+  const scaleX = 586;
+  const scaleTop = 154;
+  const scaleHeight = 210;
+  ctx.strokeStyle = '#dae6e5';
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.moveTo(scaleX, scaleTop);
+  ctx.lineTo(scaleX, scaleTop + scaleHeight);
+  ctx.stroke();
+  ctx.fillStyle = '#259cda';
+  ctx.fillRect(scaleX - 26, scaleTop + scaleHeight * (1 - ratio), 52, scaleHeight * ratio);
+  ctx.textAlign = 'left';
+  ctx.font = '700 25px sans-serif';
+  for (let index = 0; index <= 3; index++) {
+    const y = scaleTop + scaleHeight * (1 - index / 3);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(scaleX, y);
+    ctx.lineTo(scaleX + 30, y);
+    ctx.stroke();
+    ctx.fillStyle = '#eef6f4';
+    ctx.fillText(`${(maxLevel * index / 3).toFixed(1)}m`, scaleX + 42, y + 2);
+  }
+
+  ctx.fillStyle = alertColor;
+  ctx.fillRect(24, 394, width - 48, 88);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '900 39px "Yu Gothic UI", "Meiryo", sans-serif';
+  ctx.fillText(`警戒レベル${alert.level}　${alert.title}`, width / 2, 439);
+  ctx.fillStyle = '#e8f2ef';
+  ctx.font = '700 29px "Yu Gothic UI", "Meiryo", sans-serif';
+  const forecastText = floodRisingEnabled
+    ? `今後の予測：最大 ${maxLevel.toFixed(1)}m（さらに +${activeScenario.flood.forecastRiseMeters.toFixed(1)}m）`
+    : '水位上昇は編集モードで一時停止中';
+  ctx.fillText(forecastText, width / 2, 535);
+  texture.needsUpdate = true;
+
+  const fillHeight = Math.max(0.025, ratio * 2);
+  gaugeFill.scale.y = fillHeight;
+  gaugeFill.position.y = 0.31 + fillHeight / 2;
+  const hazardColor = alert.level >= 5 ? 0x9b59b6 : alert.level >= 4 ? 0xe64b2f : alert.level >= 3 ? 0xf1b532 : 0x28a6e2;
+  gaugeFillMaterial.color.setHex(hazardColor);
+  gaugeFillMaterial.emissive.setHex(alert.level >= 4 ? 0x7e1608 : 0x075d91);
+  beaconMaterial.color.setHex(hazardColor);
+  beaconMaterial.emissive.setHex(alert.level >= 4 ? hazardColor : 0x8b5b00);
+  beaconMaterial.emissiveIntensity = alert.level >= 4 ? 2.2 : alert.level >= 3 ? 1.4 : 0.55;
+}
+
+const waterObservationPoint = createWaterObservationPoint();
+
 function createEvacuationSign(config, origin, parent) {
   const half = config.halfBlocks;
   const wallHeight = config.wallHeightBlocks;
@@ -4041,6 +4249,7 @@ function updateFloodLevel(dt) {
   floodForecast.textContent = !floodRisingEnabled
     ? '上昇を一時停止中'
     : floodWaterLevel >= maxLevel ? '最高水位に到達' : '上昇中';
+  updateWaterObservationPoint();
 }
 
 const EVACUATION_LEVELS = [
@@ -7115,9 +7324,9 @@ addEventListener('pagehide', () => saveTrainingProgress());
 if ('serviceWorker' in navigator) {
   let serviceWorkerReloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (serviceWorkerReloading || sessionStorage.getItem('suibo-sw-reloaded-v13')) return;
+    if (serviceWorkerReloading || sessionStorage.getItem('suibo-sw-reloaded-v16')) return;
     serviceWorkerReloading = true;
-    sessionStorage.setItem('suibo-sw-reloaded-v13', '1');
+    sessionStorage.setItem('suibo-sw-reloaded-v16', '1');
     location.reload();
   });
   addEventListener('load', () => {
