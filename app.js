@@ -1,5 +1,5 @@
-import * as THREE from './vendor/three.module.js?v=20260828-16';
-import { TRAINING_SCENARIOS, getTrainingScenario } from './scenarios.js?v=20260828-16';
+import * as THREE from './vendor/three.module.js?v=20260828-17';
+import { TRAINING_SCENARIOS, getTrainingScenario } from './scenarios.js?v=20260828-17';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -2475,6 +2475,14 @@ createHouseLayer('HouseDoor', doorBlocks, 0x65412f);
 createHouseLayer('HouseRoof', roofBlocks, 0x344d61);
 createHouseLayer('HouseRoofHighlights', roofHighlightBlocks, 0x496c83);
 
+addBuildingFacadeDetails({
+  name: 'StartHouse',
+  label: '防災訓練 受付',
+  halfBlocks: halfHouse,
+  wallHeightBlocks: 9,
+  colors: { trim: 0x70513b, roof: 0x344d61 }
+}, houseOrigin, startHouseGroup);
+
 const walkableStepZones = [];
 const houseColliders = [{
   minX: houseOrigin.x - (halfHouse + 0.65) * tileSize,
@@ -2525,6 +2533,129 @@ function createBuildingLayer(name, origin, cells, color, parent) {
   mesh.receiveShadow = true;
   (parent || scene).add(mesh);
   return mesh;
+}
+
+function addBuildingFacadeDetails(config, origin, parent) {
+  const half = config.halfBlocks;
+  const wallHeight = config.wallHeightBlocks;
+  const facadeX = origin.x + (half + 0.56) * tileSize;
+  const trimMaterial = new THREE.MeshStandardMaterial({
+    color: config.colors.trim,
+    roughness: 0.7,
+    metalness: 0.04
+  });
+  const awningMaterial = new THREE.MeshStandardMaterial({
+    color: config.apartment ? 0x55656b : config.colors.roof,
+    roughness: 0.62,
+    metalness: 0.05
+  });
+  const lampMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffe6a3,
+    roughness: 0.34,
+    emissive: 0xffa629,
+    emissiveIntensity: 1.7
+  });
+  const railMaterial = new THREE.MeshStandardMaterial({
+    color: 0x4c565a,
+    roughness: 0.45,
+    metalness: 0.42
+  });
+
+  function addBox(name, size, position, material) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
+    mesh.name = `${config.name}${name}`;
+    mesh.position.copy(position);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    parent.add(mesh);
+    return mesh;
+  }
+
+  // A slim fascia and warm lamps clearly identify the usable entrance while
+  // keeping the existing block canopy and collision shape unchanged.
+  addBox('EntranceFascia', [0.16, 0.28, 1.72], new THREE.Vector3(
+    facadeX + 0.12,
+    origin.y + Math.min(8, wallHeight) * tileSize,
+    origin.z
+  ), awningMaterial);
+
+  for (const side of [-1, 1]) {
+    addBox('EntranceLamp', [0.15, 0.25, 0.18], new THREE.Vector3(
+      facadeX + 0.16,
+      origin.y + 4.5 * tileSize,
+      origin.z + side * 0.74
+    ), lampMaterial);
+  }
+
+  const signTexture = createSignTexture((ctx, width, height) => {
+    ctx.fillStyle = config.apartment ? '#385667' : '#214f3d';
+    ctx.fillRect(0, 0, width, height);
+    ctx.strokeStyle = '#e8dfbd';
+    ctx.lineWidth = 9;
+    ctx.strokeRect(6, 6, width - 12, height - 12);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '800 46px "Yu Gothic UI", "Meiryo", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(config.label || config.name, width / 2, height / 2 + 1);
+  }, 512, 128);
+  const namePlate = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.62, 0.41),
+    new THREE.MeshStandardMaterial({ map: signTexture, roughness: 0.55, side: THREE.DoubleSide })
+  );
+  namePlate.name = `${config.name}NamePlate`;
+  namePlate.position.set(
+    facadeX + 0.215,
+    origin.y + Math.min(9.15, wallHeight - 0.2) * tileSize,
+    origin.z
+  );
+  namePlate.rotation.y = Math.PI / 2;
+  parent.add(namePlate);
+
+  if (config.apartment) {
+    // Repeated balconies establish the apartment's scale and make each floor
+    // readable from the evacuation road. They start above the entrance level.
+    const balconyLevels = [10, 15, 20].filter((level) => level < wallHeight);
+    for (const level of balconyLevels) {
+      for (const side of [-1, 1]) {
+        const balconyZ = origin.z + side * 1.15;
+        const balconyY = origin.y + level * tileSize;
+        addBox('BalconySlab', [0.62, 0.12, 1.35], new THREE.Vector3(
+          facadeX + 0.17,
+          balconyY,
+          balconyZ
+        ), trimMaterial);
+        addBox('BalconyTopRail', [0.08, 0.08, 1.28], new THREE.Vector3(
+          facadeX + 0.46,
+          balconyY + 0.62,
+          balconyZ
+        ), railMaterial);
+        for (const zOffset of [-0.55, 0, 0.55]) {
+          addBox('BalconyPost', [0.07, 0.6, 0.07], new THREE.Vector3(
+            facadeX + 0.46,
+            balconyY + 0.31,
+            balconyZ + zOffset
+          ), railMaterial);
+        }
+      }
+    }
+  } else {
+    // Small rooflets break up the flat side wall and visually tie the side
+    // windows to the entrance canopy.
+    const windowOffset = Math.max(1.05, (half - 1.5) * tileSize);
+    for (const side of [-1, 1]) {
+      addBox('WindowAwning', [0.46, 0.11, 0.94], new THREE.Vector3(
+        facadeX + 0.12,
+        origin.y + Math.min(8.05, wallHeight - 0.55) * tileSize,
+        origin.z + side * windowOffset
+      ), awningMaterial);
+      addBox('WindowSill', [0.18, 0.1, 0.92], new THREE.Vector3(
+        facadeX + 0.075,
+        origin.y + 3.35 * tileSize,
+        origin.z + side * windowOffset
+      ), trimMaterial);
+    }
+  }
 }
 
 function createConfiguredBuilding(config) {
@@ -2607,6 +2738,7 @@ function createConfiguredBuilding(config) {
   createBuildingLayer(`${config.name}Door`, origin, door, config.colors.door, group);
   createBuildingLayer(`${config.name}Roof`, origin, roof, config.colors.roof, group);
   createBuildingLayer(`${config.name}RoofHighlights`, origin, roofHighlight, config.colors.trim, group);
+  addBuildingFacadeDetails(config, origin, group);
 
   const collider = {
     minX: origin.x - (half + 0.65) * tileSize,
@@ -6983,9 +7115,9 @@ addEventListener('pagehide', () => saveTrainingProgress());
 if ('serviceWorker' in navigator) {
   let serviceWorkerReloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (serviceWorkerReloading || sessionStorage.getItem('suibo-sw-reloaded-v12')) return;
+    if (serviceWorkerReloading || sessionStorage.getItem('suibo-sw-reloaded-v13')) return;
     serviceWorkerReloading = true;
-    sessionStorage.setItem('suibo-sw-reloaded-v12', '1');
+    sessionStorage.setItem('suibo-sw-reloaded-v13', '1');
     location.reload();
   });
   addEventListener('load', () => {
