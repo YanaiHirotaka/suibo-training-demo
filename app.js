@@ -1,5 +1,5 @@
-import * as THREE from './vendor/three.module.js';
-import { TRAINING_SCENARIOS, getTrainingScenario } from './scenarios.js';
+import * as THREE from './vendor/three.module.js?v=20260828-16';
+import { TRAINING_SCENARIOS, getTrainingScenario } from './scenarios.js?v=20260828-16';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -73,6 +73,7 @@ const minimapGoal = document.querySelector('#minimapGoal');
 const minimapGoalLine = document.querySelector('#minimapGoalLine');
 const missionInspectHazard = document.querySelector('#missionInspectHazard');
 const missionReachCheckpoint = document.querySelector('#missionReachCheckpoint');
+const missionConfirmDetour = document.querySelector('#missionConfirmDetour');
 const missionHelpNpc = document.querySelector('#missionHelpNpc');
 const missionReachShelter = document.querySelector('#missionReachShelter');
 const missionProgress = document.querySelector('#missionProgress');
@@ -517,7 +518,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, initialPixelRatioLimit));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.08;
 
@@ -1692,8 +1693,16 @@ function terrainTileY(blockX, blockZ, baseY) {
 }
 
 const grassTileMaterial = new THREE.MeshLambertMaterial({ map: grassTexture, color: 0xffffff });
-const roadTileMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff });
-const pavingTileMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff });
+const roadTileMaterial = new THREE.MeshStandardMaterial({
+  color: 0xffffff,
+  roughness: 0.56,
+  metalness: 0.07
+});
+const pavingTileMaterial = new THREE.MeshStandardMaterial({
+  color: 0xffffff,
+  roughness: 0.42,
+  metalness: 0.11
+});
 const riverTileMaterial = new THREE.MeshStandardMaterial({
   color: 0x2aa5b8,
   roughness: 0.08,
@@ -2726,6 +2735,16 @@ function createUrbanStreetscape() {
     emissiveIntensity: 0.7,
     roughness: 0.45
   });
+  const curbMaterial = new THREE.MeshStandardMaterial({ color: 0xe2ded0, roughness: 0.78 });
+  const markingMaterial = new THREE.MeshStandardMaterial({
+    color: 0xf7f4d7,
+    roughness: 0.5,
+    emissive: 0x4a471f,
+    emissiveIntensity: 0.08
+  });
+  const drainMaterial = new THREE.MeshStandardMaterial({ color: 0x323a3d, roughness: 0.4, metalness: 0.58 });
+  const planterMaterial = new THREE.MeshStandardMaterial({ color: 0x80796b, roughness: 0.9 });
+  const planterSoilMaterial = new THREE.MeshStandardMaterial({ color: 0x3f3024, roughness: 1 });
   const matrix = new THREE.Matrix4();
 
   function makeInstances(name, geometry, material, positions, heightOffset) {
@@ -2748,6 +2767,141 @@ function createUrbanStreetscape() {
   makeInstances('StreetTreeCrowns', new THREE.BoxGeometry(1.15, 1.05, 1.15), leafMaterial, treeSites, 1.55);
   makeInstances('StreetLampPoles', new THREE.CylinderGeometry(0.055, 0.075, 2.45, 8), lampMaterial, lampSites, 1.225);
   makeInstances('StreetLampHeads', new THREE.BoxGeometry(0.36, 0.18, 0.36), lampGlowMaterial, lampSites, 2.42);
+
+  // A denser streetscape pass for the first playable evacuation corridor.
+  // These lightweight instanced details do not participate in collision, so
+  // map painting and flood-aware route searching keep their existing behavior.
+  function makeGroundInstances(name, geometry, material, positions, heightOffset = 0.075) {
+    if (!positions.length) return null;
+    const mesh = new THREE.InstancedMesh(geometry, material, positions.length);
+    mesh.name = name;
+    positions.forEach(({ blockX, blockZ }, index) => {
+      const groundY = getTerrainHeightBlocks(Math.floor(blockX), Math.floor(blockZ)) * tileSize;
+      matrix.makeTranslation(worldXFromBlock(blockX), groundY + heightOffset, worldZFromBlock(blockZ));
+      mesh.setMatrixAt(index, matrix);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    return mesh;
+  }
+
+  const corridorMinZ = Math.max(crossMaxZ + 2, 153);
+  const corridorMaxZ = Math.min(road.bottom - 2, 193);
+  const curbSites = [];
+  const drainSites = [];
+  const laneMarkSites = [];
+  for (let z = corridorMinZ; z <= corridorMaxZ; z += 2) {
+    curbSites.push({ blockX: road.left + 0.22, blockZ: z }, { blockX: road.right - 0.22, blockZ: z });
+  }
+  for (let z = corridorMinZ + 2; z <= corridorMaxZ; z += 8) {
+    drainSites.push({ blockX: road.left + 0.75, blockZ: z }, { blockX: road.right - 0.75, blockZ: z + 3 });
+  }
+  for (let z = corridorMinZ + 1; z <= corridorMaxZ; z += 6) {
+    laneMarkSites.push({ blockX: road.left + 3.2, blockZ: z }, { blockX: road.right - 3.2, blockZ: z });
+  }
+  makeGroundInstances('EvacuationRouteCurbs', new THREE.BoxGeometry(0.14, 0.13, tileSize * 2.02), curbMaterial, curbSites, 0.095);
+  makeGroundInstances('EvacuationRouteDrains', new THREE.BoxGeometry(0.42, 0.035, 0.72), drainMaterial, drainSites, 0.095);
+  makeGroundInstances('EvacuationRouteLaneMarks', new THREE.BoxGeometry(0.12, 0.025, 0.82), markingMaterial, laneMarkSites, 0.09);
+
+  const crosswalkSites = [];
+  const crosswalkZ = Math.min(corridorMaxZ - 3, 170);
+  for (let x = Math.ceil(road.left) + 1; x <= Math.floor(road.right) - 1; x += 2) {
+    crosswalkSites.push({ blockX: x, blockZ: crosswalkZ });
+  }
+  makeGroundInstances('EvacuationCrosswalk', new THREE.BoxGeometry(1.15 * tileSize, 0.025, 0.58), markingMaterial, crosswalkSites, 0.092);
+
+  makeInstances('StreetTreePlanters', new THREE.BoxGeometry(0.92, 0.18, 0.92), planterMaterial, treeSites, 0.09);
+  makeInstances('StreetTreePlanterSoil', new THREE.BoxGeometry(0.66, 0.04, 0.66), planterSoilMaterial, treeSites, 0.2);
+
+  const propDarkMaterial = new THREE.MeshStandardMaterial({ color: 0x26343a, roughness: 0.56, metalness: 0.3 });
+  const propGlassMaterial = new THREE.MeshStandardMaterial({
+    color: 0x92d8ed,
+    roughness: 0.18,
+    metalness: 0.16,
+    emissive: 0x2d6f88,
+    emissiveIntensity: 0.18
+  });
+  const vendingRedMaterial = new THREE.MeshStandardMaterial({ color: 0xc94036, roughness: 0.54 });
+  const vendingBlueMaterial = new THREE.MeshStandardMaterial({ color: 0x2872a9, roughness: 0.54 });
+  const vendingWhiteMaterial = new THREE.MeshStandardMaterial({ color: 0xf0eee4, roughness: 0.6 });
+  const bollardMaterial = new THREE.MeshStandardMaterial({ color: 0xe68a24, roughness: 0.58 });
+  const bollardStripeMaterial = new THREE.MeshStandardMaterial({ color: 0xf6f1df, roughness: 0.62 });
+
+  function sidewalkY(blockX, blockZ) {
+    return getTerrainHeightBlocks(Math.floor(blockX), Math.floor(blockZ)) * tileSize + sidewalkHeight + 0.055;
+  }
+
+  function addVendingMachine(blockX, blockZ, bodyMaterial) {
+    if (!isClearOfBuilding(blockX, blockZ, 0.25)) return;
+    const vending = new THREE.Group();
+    vending.name = 'StreetVendingMachine';
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.72, 1.55, 0.5), bodyMaterial);
+    body.position.y = 0.775;
+    body.castShadow = true;
+    const display = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.62, 0.025), propGlassMaterial);
+    display.position.set(0, 1.08, 0.263);
+    const lowerPanel = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.34, 0.025), vendingWhiteMaterial);
+    lowerPanel.position.set(0, 0.38, 0.264);
+    const payment = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.19, 0.04), propDarkMaterial);
+    payment.position.set(0.22, 0.72, 0.282);
+    const productMaterial = new THREE.MeshStandardMaterial({ color: 0xffd66c, roughness: 0.42, emissive: 0x5a3c0d, emissiveIntensity: 0.12 });
+    for (let row = 0; row < 2; row++) {
+      for (let column = 0; column < 4; column++) {
+        const product = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.14, 0.035), productMaterial);
+        product.position.set(-0.21 + column * 0.14, 0.91 + row * 0.22, 0.287);
+        vending.add(product);
+      }
+    }
+    vending.add(body, display, lowerPanel, payment);
+    vending.position.set(worldXFromBlock(blockX), sidewalkY(blockX, blockZ), worldZFromBlock(blockZ));
+    group.add(vending);
+  }
+
+  function addEvacuationRouteSign(blockX, blockZ, facing = 0) {
+    if (!isClearOfBuilding(blockX, blockZ, 0.2)) return;
+    const signGroup = new THREE.Group();
+    signGroup.name = 'EvacuationRouteStreetSign';
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 1.65, 8), propDarkMaterial);
+    pole.position.y = 0.825;
+    const signTexture = createSignTexture((ctx, widthPx, heightPx) => {
+      ctx.fillStyle = '#137346';
+      ctx.fillRect(0, 0, widthPx, heightPx);
+      ctx.strokeStyle = '#f4f0d8';
+      ctx.lineWidth = 12;
+      ctx.strokeRect(8, 8, widthPx - 16, heightPx - 16);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '900 42px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('避難所  ←', widthPx / 2, heightPx / 2);
+    }, 384, 128);
+    const signFace = new THREE.Mesh(
+      new THREE.BoxGeometry(1.02, 0.48, 0.065),
+      [propDarkMaterial, propDarkMaterial, propDarkMaterial, propDarkMaterial,
+        new THREE.MeshStandardMaterial({ map: signTexture, roughness: 0.46 }), propDarkMaterial]
+    );
+    signFace.position.y = 1.62;
+    signGroup.add(pole, signFace);
+    signGroup.position.set(worldXFromBlock(blockX), sidewalkY(blockX, blockZ), worldZFromBlock(blockZ));
+    signGroup.rotation.y = facing;
+    group.add(signGroup);
+  }
+
+  addVendingMachine(road.left - sidewalkWidthBlocks + 0.65, 181, vendingRedMaterial);
+  addVendingMachine(road.right + sidewalkWidthBlocks - 0.65, 158, vendingBlueMaterial);
+  addEvacuationRouteSign(road.left - sidewalkWidthBlocks + 0.7, 173, 0);
+  addEvacuationRouteSign(road.right + sidewalkWidthBlocks - 0.7, 155, Math.PI);
+
+  const bollardSites = [
+    { blockX: road.left + 0.7, blockZ: crosswalkZ - 1.25 },
+    { blockX: road.right - 0.7, blockZ: crosswalkZ - 1.25 },
+    { blockX: road.left + 0.7, blockZ: crosswalkZ + 1.25 },
+    { blockX: road.right - 0.7, blockZ: crosswalkZ + 1.25 }
+  ];
+  makeGroundInstances('CrosswalkBollards', new THREE.CylinderGeometry(0.1, 0.12, 0.72, 8), bollardMaterial, bollardSites, 0.45);
+  makeGroundInstances('CrosswalkBollardStripes', new THREE.CylinderGeometry(0.105, 0.105, 0.13, 8), bollardStripeMaterial, bollardSites, 0.51);
 
   scene.add(group);
   return group;
@@ -3147,6 +3301,7 @@ let safeRouteRecalculateTimer = 0;
 // shoulder, forcing the route search to use the higher ground on either side.
 const ROAD_CLOSURE_BOUNDS = Object.freeze({ minBlockX: 169, maxBlockX: 187, minBlockZ: 146, maxBlockZ: 151 });
 let roadClosureActive = false;
+let roadClosureRouteConfirmed = false;
 const roadClosureGroup = new THREE.Group();
 roadClosureGroup.name = 'LowRoadClosure';
 roadClosureGroup.visible = false;
@@ -3222,8 +3377,11 @@ function activateRoadClosure() {
   roadClosureActive = true;
   roadClosureGroup.visible = true;
   minimapRoadClosure.setAttribute('opacity', '1');
+  missionConfirmDetour?.classList.remove('is-hidden');
+  updateHazardToggleLabel();
   safeRouteGoalKey = '';
   safeRouteRecalculateTimer = 0;
+  updateMissionProgress();
   playToneSequence([
     { frequency: 620, duration: 0.12, volume: 0.16 },
     { frequency: 460, duration: 0.18, volume: 0.18 },
@@ -3235,6 +3393,23 @@ function activateRoadClosure() {
     '低地道路が通行止めです',
     'バリケードを越えず、更新された緑の矢印を確認して高い場所へ迂回してください。',
     'warning', 9000, 0
+  );
+}
+
+function confirmRoadClosureRoute() {
+  if (!roadClosureActive || roadClosureRouteConfirmed) return;
+  roadClosureRouteConfirmed = true;
+  missionConfirmDetour?.classList.add('is-done');
+  updateHazardToggleLabel();
+  safeRouteGoalKey = '';
+  safeRouteRecalculateTimer = 0;
+  updateMissionProgress();
+  showNpcToast('更新された安全ルートを確認しました。', 3400);
+  showTrainingAdvice(
+    'detour-confirmed',
+    '迂回ルートを確認しました',
+    '赤い通行止め表示を避け、緑の矢印に沿って高い場所を進みましょう。',
+    'info', 6500, 0
   );
 }
 
@@ -3489,16 +3664,18 @@ let missionReachShelterDone = false;
 const missionStages = [
   { element: missionInspectHazard, isComplete: () => missionHazardChecked },
   { element: missionReachCheckpoint, isComplete: () => missionCheckpointDone },
+  { element: missionConfirmDetour, isActive: () => roadClosureActive, isComplete: () => roadClosureRouteConfirmed },
   { element: missionHelpNpc, isComplete: () => missionHelpNpcDone },
   { element: missionReachShelter, isComplete: () => missionReachShelterDone }
 ];
 
 function updateMissionProgress() {
-  const complete = missionStages.filter((stage) => stage.isComplete()).length;
-  missionProgress.textContent = `${complete}/${missionStages.length}`;
-  const currentStage = missionStages.find((stage) => !stage.isComplete());
+  const activeStages = missionStages.filter((stage) => stage.element && (!stage.isActive || stage.isActive()));
+  const complete = activeStages.filter((stage) => stage.isComplete()).length;
+  missionProgress.textContent = `${complete}/${activeStages.length}`;
+  const currentStage = activeStages.find((stage) => !stage.isComplete());
   missionStages.forEach((stage) => {
-    stage.element.classList.toggle('is-current', stage === currentStage);
+    stage.element.classList.toggle('is-current', activeStages.includes(stage) && stage === currentStage);
   });
 }
 
@@ -4740,6 +4917,7 @@ function trainingFailureFeedback() {
   const feedback = [];
   if (!missionHazardChecked) feedback.push('開始後すぐにハザードマップを開き、安全な方向を確認しましょう。');
   else if (!missionCheckpointDone) feedback.push('安全ルートの矢印をたどり、判断チェックポイントへ早めに向かいましょう。');
+  if (roadClosureActive && !roadClosureRouteConfirmed) feedback.push('通行止めが発生したら、ハザードマップを開き直して更新された迂回ルートを確認しましょう。');
   if (!missionHelpNpcDone) feedback.push(`救助できたのは${rescuedPeopleTotal()}/${npcHelpers.length}人です。支援が必要な人へ順番に声をかけましょう。`);
   else if (!missionReachShelterDone) feedback.push('同行者との距離を保ちながら、全員で避難所の入口まで到着しましょう。');
   feedback.push('警戒レベルが低いうちに行動を始めることが、避難時間の確保につながります。');
@@ -4789,7 +4967,14 @@ function showTrainingFailure() {
 }
 
 function checkTrainingComplete() {
-  if (trainingCompleteShown || !missionHazardChecked || !missionCheckpointDone || !missionHelpNpcDone || !missionReachShelterDone) return;
+  if (
+    trainingCompleteShown
+    || !missionHazardChecked
+    || !missionCheckpointDone
+    || (roadClosureActive && !roadClosureRouteConfirmed)
+    || !missionHelpNpcDone
+    || !missionReachShelterDone
+  ) return;
   trainingCompleteShown = true;
   clearTrainingProgress();
   setRainAudioLevel(0);
@@ -4932,6 +5117,7 @@ function saveTrainingProgress(now = performance.now()) {
     missionCheckpointDone,
     missionHelpNpcDone,
     missionReachShelterDone,
+    roadClosureRouteConfirmed,
     checkpointDecisionResolved,
     checkpointDecisionMistakes,
     routeSampleCount,
@@ -4992,6 +5178,7 @@ function restoreTrainingProgress(progress) {
   missionCheckpointDone = progress.missionCheckpointDone;
   missionHelpNpcDone = progress.missionHelpNpcDone;
   missionReachShelterDone = progress.missionReachShelterDone;
+  roadClosureRouteConfirmed = Boolean(progress.roadClosureRouteConfirmed);
   checkpointDecisionResolved = progress.checkpointDecisionResolved;
   checkpointDecisionMistakes = progress.checkpointDecisionMistakes;
   routeSampleCount = progress.routeSampleCount || 0;
@@ -5015,6 +5202,7 @@ function restoreTrainingProgress(progress) {
   missionReachCheckpoint.classList.toggle('is-done', missionCheckpointDone);
   missionHelpNpc.classList.toggle('is-done', missionHelpNpcDone);
   missionReachShelter.classList.toggle('is-done', missionReachShelterDone);
+  missionConfirmDetour?.classList.toggle('is-done', roadClosureRouteConfirmed);
   checkpointMarker.visible = !missionCheckpointDone;
   if (missionHazardChecked) setHazardMapVisible(true);
   renderInventory();
@@ -6729,10 +6917,16 @@ function buildHazardOverlay() {
 }
 
 let hazardMapVisible = false;
+function updateHazardToggleLabel() {
+  hazardToggle.textContent = roadClosureActive && !roadClosureRouteConfirmed
+    ? 'ルート再確認'
+    : hazardMapVisible ? 'ハザード非表示' : 'ハザード表示';
+}
+
 function setHazardMapVisible(visible) {
   hazardMapVisible = visible;
   hazardToggle.classList.toggle('is-active', hazardMapVisible);
-  hazardToggle.textContent = hazardMapVisible ? 'ハザード非表示' : 'ハザード表示';
+  updateHazardToggleLabel();
   hazardLegend.classList.toggle('is-hidden', !hazardMapVisible);
   minimapHazard.setAttribute('opacity', hazardMapVisible ? '1' : '0');
   if (hazardMapVisible) completeHazardMission();
@@ -6743,11 +6937,19 @@ function setMapExpanded(expanded) {
   minimapPanel.classList.toggle('is-expanded', expanded);
   mapExpandToggle.setAttribute('aria-expanded', String(expanded));
   mapExpandToggle.innerHTML = expanded ? '地図を閉じる <kbd>M</kbd>' : '地図拡大 <kbd>M</kbd>';
-  if (expanded) setHazardMapVisible(true);
+  if (expanded) {
+    setHazardMapVisible(true);
+    confirmRoadClosureRoute();
+  }
 }
 
 mapExpandToggle.addEventListener('click', () => setMapExpanded(!mapExpanded));
 hazardToggle.addEventListener('click', () => {
+  if (roadClosureActive && !roadClosureRouteConfirmed) {
+    setHazardMapVisible(true);
+    confirmRoadClosureRoute();
+    return;
+  }
   setHazardMapVisible(!hazardMapVisible);
 });
 // --------------------------------------------------------------------------
@@ -6779,9 +6981,18 @@ updateConnectionStatus();
 addEventListener('pagehide', () => saveTrainingProgress());
 
 if ('serviceWorker' in navigator) {
+  let serviceWorkerReloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (serviceWorkerReloading || sessionStorage.getItem('suibo-sw-reloaded-v12')) return;
+    serviceWorkerReloading = true;
+    sessionStorage.setItem('suibo-sw-reloaded-v12', '1');
+    location.reload();
+  });
   addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch((error) => {
-      console.warn('オフライン機能を開始できませんでした。', error);
-    });
+    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
+      .then((registration) => registration.update())
+      .catch((error) => {
+        console.warn('オフライン機能を開始できませんでした。', error);
+      });
   });
 }

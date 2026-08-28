@@ -1,13 +1,13 @@
-const CACHE_NAME = 'suibo-training-v9';
+const CACHE_NAME = 'suibo-training-v12';
 const APP_ASSETS = [
   './',
   './index.html',
-  './styles.css',
-  './app.js',
-  './scenarios.js',
+  './styles.css?v=20260828-16',
+  './app.js?v=20260828-16',
+  './scenarios.js?v=20260828-16',
   './manifest.webmanifest',
   './icon.svg',
-  './vendor/three.module.js'
+  './vendor/three.module.js?v=20260828-16'
 ];
 
 self.addEventListener('install', (event) => {
@@ -44,6 +44,19 @@ self.addEventListener('fetch', (event) => {
 
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin === self.location.origin) {
+    if (requestUrl.searchParams.has('v')) {
+      event.respondWith(
+        caches.match(event.request)
+          .then((cached) => cached || fetch(event.request).then((response) => {
+            if (response.ok) {
+              const copy = response.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+            }
+            return response;
+          }))
+      );
+      return;
+    }
     event.respondWith(
       fetch(event.request)
         .then((response) => {

@@ -10,7 +10,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon.svg">
-  <link rel="stylesheet" href="./styles.css?v=20260826-13">
+  <link rel="stylesheet" href="./styles.css?v=20260828-16">
 </head>
 <body>
   <canvas id="game" aria-label="水防訓練フィールド"></canvas>
@@ -34,6 +34,10 @@
       <li class="mission-item" id="missionReachCheckpoint">
         <span class="mission-check">✓</span>
         <span class="mission-text">安全ルートのチェックポイントを通過しよう</span>
+      </li>
+      <li class="mission-item is-hidden" id="missionConfirmDetour">
+        <span class="mission-check">✓</span>
+        <span class="mission-text">通行止め後のルートを再確認しよう</span>
       </li>
       <li class="mission-item" id="missionHelpNpc">
         <span class="mission-check">✓</span>
@@ -406,6 +410,6 @@
     </div>
   </div>
 
-  <script type="module" src="./app.js?v=20260826-13"></script>
+  <script type="module" src="./app.js?v=20260828-16"></script>
 </body>
 </html>

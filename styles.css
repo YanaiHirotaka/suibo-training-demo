@@ -558,6 +558,10 @@ body {
   color: #d9eff7;
 }
 
+.mission-item.is-hidden {
+  display: none;
+}
+
 .mission-item.is-current {
   color: #ffffff;
 }
