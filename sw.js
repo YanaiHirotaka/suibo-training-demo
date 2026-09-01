@@ -1,13 +1,14 @@
-const CACHE_NAME = 'suibo-training-v16';
+const CACHE_NAME = 'suibo-training-v18';
 const APP_ASSETS = [
   './',
   './index.html',
-  './styles.css?v=20260828-20',
-  './app.js?v=20260828-20',
-  './scenarios.js?v=20260828-20',
+  './styles.css?v=20260901-21',
+  './app.js?v=20260901-22',
+  './modules/time.js?v=20260901-22',
+  './scenarios.js?v=20260901-21',
   './manifest.webmanifest',
   './icon.svg',
-  './vendor/three.module.js?v=20260828-20'
+  './vendor/three.module.js?v=20260901-21'
 ];
 
 self.addEventListener('install', (event) => {

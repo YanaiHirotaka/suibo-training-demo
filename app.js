@@ -1,5 +1,6 @@
-import * as THREE from './vendor/three.module.js?v=20260828-20';
-import { TRAINING_SCENARIOS, getTrainingScenario } from './scenarios.js?v=20260828-20';
+import * as THREE from './vendor/three.module.js?v=20260901-21';
+import { TRAINING_SCENARIOS, getTrainingScenario } from './scenarios.js?v=20260901-21';
+import { formatElapsedTime, formatRemainingTime, scenarioTimeLabel } from './modules/time.js?v=20260901-22';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -360,12 +361,6 @@ function renderInventory() {
   inventorySlots.querySelectorAll('.inventory-slot').forEach((slot) => {
     slot.addEventListener('click', () => useEmergencyItem(Number(slot.dataset.inventoryIndex)));
   });
-}
-
-function scenarioTimeLabel(seconds) {
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
 }
 
 function renderScenarioOptions() {
@@ -3813,11 +3808,13 @@ function routeNodeCost(from, to) {
     activeScenario.flood.maxLevelMeters,
     floodWaterLevel + activeScenario.flood.forecastRiseMeters
   );
-  const predictedDepth = Math.max(0, forecastLevel - toHeight);
-  const floodPenalty = predictedDepth <= 0.15 ? 0 : predictedDepth * predictedDepth * 8;
-  const slopePenalty = Math.abs(toHeight - fromHeight) * 3.5;
   const routeBlockX = Math.round(toWorld.blockX);
   const routeBlockZ = Math.round(toWorld.blockZ);
+  const predictedDepth = isFloodableTile(routeBlockX, routeBlockZ)
+    ? Math.max(0, forecastLevel - toHeight)
+    : 0;
+  const floodPenalty = predictedDepth <= 0.15 ? 0 : predictedDepth * predictedDepth * 8;
+  const slopePenalty = Math.abs(toHeight - fromHeight) * 3.5;
   const roadFactor = (isRoadBlock(routeBlockX, routeBlockZ) || isUrbanRoadBlock(routeBlockX, routeBlockZ)) ? 0.68 : 1;
   return baseDistance * roadFactor + floodPenalty + slopePenalty;
 }
@@ -3926,7 +3923,10 @@ function renderSafeRoute() {
     if (distanceSinceArrow < 1.5 && index < safeRoutePoints.length - 1) continue;
     distanceSinceArrow = 0;
     const arrow = new THREE.Mesh(safeRouteArrowGeometry, safeRouteArrowMaterial);
-    const routeSurfaceY = Math.max(getWalkableHeight(point.x, point.z) + 0.055, floodWaterLevel + 0.045);
+    const groundSurfaceY = getWalkableHeight(point.x, point.z) + 0.055;
+    const routeSurfaceY = isFloodablePosition(point.x, point.z)
+      ? Math.max(groundSurfaceY, floodWaterLevel + 0.045)
+      : groundSurfaceY;
     arrow.position.set(point.x, routeSurfaceY, point.z);
     arrow.rotation.y = Math.atan2(previous.x - point.x, previous.z - point.z);
     arrow.renderOrder = 8;
@@ -3958,10 +3958,10 @@ function updateSafeRoute(dt) {
 
 function updateSafeRouteArrowHeights() {
   safeRouteArrowGroup.children.forEach((arrow) => {
-    arrow.position.y = Math.max(
-      getWalkableHeight(arrow.position.x, arrow.position.z) + 0.055,
-      floodWaterLevel + 0.045
-    );
+    const groundSurfaceY = getWalkableHeight(arrow.position.x, arrow.position.z) + 0.055;
+    arrow.position.y = isFloodablePosition(arrow.position.x, arrow.position.z)
+      ? Math.max(groundSurfaceY, floodWaterLevel + 0.045)
+      : groundSurfaceY;
   });
 }
 
@@ -4204,10 +4204,9 @@ function updateMissionGuidance() {
 // --------------------------------------------------------------------------
 
 // --- Rising flood water -----------------------------------------------------
-// Minimal first pass: a flat water plane that climbs steadily once the
-// player has started, submerging low ground (the plateau and anything on it
-// stays dry since it's well above the max level). No per-tile flood state
-// yet - "flooded" is just "is the ground here below the current water Y".
+// Floodwater is rendered only over road-like lowland cells. This keeps the
+// flood visually concentrated along evacuation streets while bridges,
+// stairs, and raised terrain naturally remain above the water surface.
 const FLOOD_SPEED_MULTIPLIER = 0.55;
 let floodWaterLevel = 0;
 // Toggled from the edit-mode "水位上昇" checkbox. Pauses/resumes the rise in
@@ -4215,23 +4214,55 @@ let floodWaterLevel = 0;
 // right where it left off.
 let floodRisingEnabled = true;
 
-const floodPlaneGeometry = new THREE.PlaneGeometry(fieldWidth, fieldDepth);
-floodPlaneGeometry.rotateX(-Math.PI / 2);
-const floodPlane = new THREE.Mesh(
-  floodPlaneGeometry,
-  new THREE.MeshBasicMaterial({
-    color: 0x1f7fb8, transparent: true, opacity: 0.55,
-    depthWrite: false, side: THREE.DoubleSide
-  })
-);
-floodPlane.name = 'FloodWaterPlane';
-floodPlane.position.y = 0;
-floodPlane.visible = false;
-floodPlane.renderOrder = 4;
-scene.add(floodPlane);
+const floodTileGeometry = new THREE.BoxGeometry(tileSize * 1.012, 0.035, tileSize * 1.012);
+const floodTileMaterial = new THREE.MeshBasicMaterial({
+  color: 0x218fc4,
+  transparent: true,
+  opacity: 0.68,
+  depthWrite: false,
+  side: THREE.DoubleSide
+});
+let floodSurfaceTiles = null;
+
+function isFloodableTile(blockX, blockZ) {
+  if (blockX < 0 || blockX >= tilesWide || blockZ < 0 || blockZ >= tilesDeep) return false;
+  if (isInsideBridgeDeckBlocks(blockX, blockZ)) return false;
+  const type = tileTypeAt(blockX, blockZ);
+  return type === 'road' || type === 'paving';
+}
+
+function isFloodablePosition(x, z) {
+  return isFloodableTile(Math.floor(blockXFromWorld(x)), Math.floor(blockZFromWorld(z)));
+}
+
+function rebuildFloodSurfaceTiles() {
+  const cells = [];
+  for (let z = 0; z < tilesDeep; z += 1) {
+    for (let x = 0; x < tilesWide; x += 1) {
+      if (isFloodableTile(x, z)) cells.push([x, z]);
+    }
+  }
+  if (floodSurfaceTiles) scene.remove(floodSurfaceTiles);
+  floodSurfaceTiles = new THREE.InstancedMesh(floodTileGeometry, floodTileMaterial, cells.length);
+  floodSurfaceTiles.name = 'LocalizedFloodSurface';
+  cells.forEach(([x, z], index) => {
+    tileMatrix.makeTranslation(worldXFromBlock(x + 0.5), 0, worldZFromBlock(z + 0.5));
+    floodSurfaceTiles.setMatrixAt(index, tileMatrix);
+  });
+  floodSurfaceTiles.instanceMatrix.needsUpdate = true;
+  floodSurfaceTiles.position.y = floodWaterLevel - 0.012;
+  floodSurfaceTiles.visible = floodWaterLevel > 0.02;
+  floodSurfaceTiles.renderOrder = 6;
+  scene.add(floodSurfaceTiles);
+  canvas.dataset.floodSurfaceTileCount = String(cells.length);
+}
+
+rebuildFloodSurfaceTiles();
 
 function isPositionFlooded(x, z) {
-  return floodWaterLevel > 0 && floodWaterLevel > getWalkableHeight(x, z) + 0.02;
+  return isFloodablePosition(x, z)
+    && floodWaterLevel > 0
+    && floodWaterLevel > getWalkableHeight(x, z) + 0.02;
 }
 
 function updateFloodLevel(dt) {
@@ -4241,8 +4272,8 @@ function updateFloodLevel(dt) {
   if (floodRisingEnabled && floodWaterLevel < maxLevel) {
     floodWaterLevel = Math.min(maxLevel, floodWaterLevel + riseMetersPerSecond * dt);
   }
-  floodPlane.position.y = floodWaterLevel;
-  floodPlane.visible = floodWaterLevel > 0.02;
+  floodSurfaceTiles.position.y = floodWaterLevel - 0.012;
+  floodSurfaceTiles.visible = floodWaterLevel > 0.02;
 
   floodValue.textContent = floodWaterLevel.toFixed(1);
   floodGaugeFill.style.height = `${Math.min(100, (floodWaterLevel / maxLevel) * 100).toFixed(1)}%`;
@@ -4396,11 +4427,13 @@ let playerHealth = PLAYER_MAX_HEALTH;
 let respawnCount = 0;
 
 function playerFloodDepth() {
+  if (!isFloodablePosition(player.position.x, player.position.z)) return 0;
   return floodWaterLevel - getWalkableHeight(player.position.x, player.position.z);
 }
 
 function isPlayerDrowning() {
-  return floodWaterLevel > player.position.y + PLAYER_NOSE_HEIGHT_METERS;
+  return isFloodablePosition(player.position.x, player.position.z)
+    && floodWaterLevel > player.position.y + PLAYER_NOSE_HEIGHT_METERS;
 }
 
 function setDangerBanner(visible, text) {
@@ -4835,13 +4868,6 @@ let trainingStartTime = 0;
 let trainingFinishTime = 0;
 let trainingDeadlineTime = 0;
 
-function formatRemainingTime(seconds) {
-  const wholeSeconds = Math.max(0, Math.ceil(seconds));
-  const minutes = Math.floor(wholeSeconds / 60);
-  const remainingSeconds = wholeSeconds % 60;
-  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
-}
-
 function updateTrainingStatus(now) {
   const referenceTime = trainingFinishTime || now;
   const remainingSeconds = characterChosen
@@ -5245,13 +5271,6 @@ function trainingFeedback(result) {
   if (result.elapsedSeconds <= activeScenario.timeLimitSeconds) feedback.push('避難猶予内に、近くの人と一緒に避難所へ到着できました。');
   else feedback.push('避難開始が遅れるほど水位が上がります。ハザード確認後は早めに行動しましょう。');
   return feedback;
-}
-
-function formatElapsedTime(ms) {
-  const totalSeconds = Math.max(0, Math.round(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
 function trainingFailureFeedback() {
@@ -5997,6 +6016,7 @@ function applyPaintIfDirty() {
   }
   buildTerrainFillBlocks();
   buildPaintableTiles();
+  rebuildFloodSurfaceTiles();
   buildBlockRamp();
   updateTufts();
   if (hazardNeedsRefresh) buildHazardOverlay();
@@ -7243,14 +7263,20 @@ function buildHazardOverlay() {
   const rects = [];
   for (let z = 0; z < tilesDeep; z += cell) {
     for (let x = 0; x < tilesWide; x += cell) {
-      const sampleX = Math.min(Math.floor(x + cell / 2), tilesWide - 1);
-      const sampleZ = Math.min(Math.floor(z + cell / 2), tilesDeep - 1);
-      const height = getTerrainHeightBlocks(sampleX, sampleZ);
-      const color = height < FLOOD_SEVERE_HEIGHT_BLOCKS
-        ? '#c0392b'
-        : height < floodSafeHeightBlocks ? '#e0a63a' : '#3ecf6b';
       const w = Math.min(cell, tilesWide - x);
       const h = Math.min(cell, tilesDeep - z);
+      let minimumFloodableHeight = Number.POSITIVE_INFINITY;
+      for (let sampleZ = z; sampleZ < z + h; sampleZ += 1) {
+        for (let sampleX = x; sampleX < x + w; sampleX += 1) {
+          if (!isFloodableTile(sampleX, sampleZ)) continue;
+          minimumFloodableHeight = Math.min(minimumFloodableHeight, getTerrainHeightBlocks(sampleX, sampleZ));
+        }
+      }
+      const color = !Number.isFinite(minimumFloodableHeight)
+        ? '#3ecf6b'
+        : minimumFloodableHeight < FLOOD_SEVERE_HEIGHT_BLOCKS
+          ? '#c0392b'
+          : minimumFloodableHeight < floodSafeHeightBlocks ? '#e0a63a' : '#3ecf6b';
       rects.push(`<rect x="${x}" y="${z}" width="${w}" height="${h}" fill="${color}" opacity=".82"/>`);
     }
   }
