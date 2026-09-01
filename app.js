@@ -1,6 +1,16 @@
 import * as THREE from './vendor/three.module.js?v=20260901-21';
 import { TRAINING_SCENARIOS, getTrainingScenario } from './scenarios.js?v=20260901-21';
 import { formatElapsedTime, formatRemainingTime, scenarioTimeLabel } from './modules/time.js?v=20260901-22';
+import {
+  TRAINING_PROGRESS_MAX_AGE_MS,
+  clearTrainingProgress as clearSavedTrainingProgress,
+  isTouchTutorialComplete,
+  loadTrainingProgress,
+  loadTrainingRecords,
+  markTouchTutorialComplete,
+  saveTrainingProgress as saveTrainingProgressData,
+  saveTrainingRecords
+} from './modules/storage.js?v=20260901-23';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -126,17 +136,6 @@ const trainingRetryButton = document.querySelector('#trainingRetry');
 const floodGaugeTickLabels = document.querySelectorAll('.flood-gauge-ticks span');
 
 let activeScenario = getTrainingScenario('standard');
-const TRAINING_RECORDS_STORAGE_KEY = 'suibo-training-records-v1';
-
-function loadTrainingRecords() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(TRAINING_RECORDS_STORAGE_KEY) || '{}');
-    return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
-  } catch (error) {
-    console.warn('Could not load training records:', error);
-    return {};
-  }
-}
 
 let trainingRecords = loadTrainingRecords();
 
@@ -167,11 +166,7 @@ function saveTrainingRecord(result = null) {
     bestTimeSeconds: newBestTime ? result.elapsedSeconds : previous.bestTimeSeconds
   };
   trainingRecords = { ...trainingRecords, [activeScenario.id]: next };
-  try {
-    localStorage.setItem(TRAINING_RECORDS_STORAGE_KEY, JSON.stringify(trainingRecords));
-  } catch (error) {
-    console.warn('Could not save training records:', error);
-  }
+  saveTrainingRecords(trainingRecords);
   return { record: next, newBestScore, newBestTime };
 }
 
@@ -5375,9 +5370,6 @@ trainingRetryButton.addEventListener('click', () => {
 });
 // --------------------------------------------------------------------------
 
-const TOUCH_TUTORIAL_STORAGE_KEY = 'suibo-touch-tutorial-complete-v1';
-const TRAINING_PROGRESS_STORAGE_KEY = 'suibo-training-progress-v1';
-const TRAINING_PROGRESS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 let pendingTrainingProgress = null;
 let nextProgressSaveTime = 0;
 let restoringTrainingProgress = false;
@@ -5399,11 +5391,7 @@ let touchTutorialIndex = 0;
 
 function canShowTouchTutorial() {
   if (!matchMedia('(hover: none) and (pointer: coarse)').matches) return false;
-  try {
-    return localStorage.getItem(TOUCH_TUTORIAL_STORAGE_KEY) !== 'true';
-  } catch {
-    return true;
-  }
+  return !isTouchTutorialComplete();
 }
 
 function renderTouchTutorial() {
@@ -5416,11 +5404,7 @@ function renderTouchTutorial() {
 
 function finishTouchTutorial() {
   touchTutorial.classList.add('is-hidden');
-  try {
-    localStorage.setItem(TOUCH_TUTORIAL_STORAGE_KEY, 'true');
-  } catch {
-    // Private browsing can disable storage; hiding it for this session is enough.
-  }
+  markTouchTutorialComplete();
 }
 
 function startTouchTutorial() {
@@ -5442,11 +5426,7 @@ touchTutorialSkip.addEventListener('click', finishTouchTutorial);
 
 function clearTrainingProgress() {
   pendingTrainingProgress = null;
-  try {
-    localStorage.removeItem(TRAINING_PROGRESS_STORAGE_KEY);
-  } catch {
-    // Storage can be unavailable in private browsing.
-  }
+  clearSavedTrainingProgress();
 }
 
 function saveTrainingProgress(now = performance.now()) {
@@ -5492,25 +5472,17 @@ function saveTrainingProgress(now = performance.now()) {
       z: npc.group.position.z
     }))
   };
-  try {
-    localStorage.setItem(TRAINING_PROGRESS_STORAGE_KEY, JSON.stringify(progress));
-  } catch {
-    // The training continues even when storage is full or unavailable.
-  }
+  saveTrainingProgressData(progress);
 }
 
 function readTrainingProgress() {
-  try {
-    const progress = JSON.parse(localStorage.getItem(TRAINING_PROGRESS_STORAGE_KEY) || 'null');
-    const valid = progress?.version === 1
-      && Date.now() - progress.savedAt < TRAINING_PROGRESS_MAX_AGE_MS
-      && progress.remainingMs > 0
-      && Array.isArray(progress.selectedItems)
-      && progress.selectedItems.length === EMERGENCY_ITEM_LIMIT;
-    if (valid) return progress;
-  } catch {
-    // Ignore malformed or unavailable saved data.
-  }
+  const progress = loadTrainingProgress();
+  const valid = progress?.version === 1
+    && Date.now() - progress.savedAt < TRAINING_PROGRESS_MAX_AGE_MS
+    && progress.remainingMs > 0
+    && Array.isArray(progress.selectedItems)
+    && progress.selectedItems.length === EMERGENCY_ITEM_LIMIT;
+  if (valid) return progress;
   clearTrainingProgress();
   return null;
 }
