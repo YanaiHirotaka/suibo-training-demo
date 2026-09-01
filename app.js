@@ -10,7 +10,22 @@ import {
   markTouchTutorialComplete,
   saveTrainingProgress as saveTrainingProgressData,
   saveTrainingRecords
-} from './modules/storage.js?v=20260901-23';
+} from './modules/storage.js?v=20260901-24';
+import {
+  loadFloatingBlocks,
+  loadHeightPaintOverrides,
+  loadStructureOffsets as loadStructureOffsetsData,
+  loadTilePaintOverrides,
+  saveStructureOffsets as saveStructureOffsetsData,
+  saveTerrainEditorState
+} from './modules/editor-storage.js?v=20260901-24';
+import {
+  ensureAudio,
+  isAudioEnabled,
+  playToneSequence,
+  setAudioEnabled,
+  setRainAudioLevel
+} from './modules/audio.js?v=20260901-25';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -194,76 +209,19 @@ let checkpointDecisionResolved = false;
 let checkpointDecisionMistakes = 0;
 let currentEvacuationLevel = 0;
 let mapExpanded = false;
-let audioEnabled = true;
-let audioContext = null;
-let masterAudioGain = null;
-let rainAudioGain = null;
 
-function ensureAudio() {
-  if (audioContext) {
-    if (audioContext.state === 'suspended') audioContext.resume();
-    return audioContext;
-  }
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextClass) return null;
-  audioContext = new AudioContextClass();
-  masterAudioGain = audioContext.createGain();
-  masterAudioGain.gain.value = audioEnabled ? 0.55 : 0;
-  masterAudioGain.connect(audioContext.destination);
-
-  const buffer = audioContext.createBuffer(1, audioContext.sampleRate * 2, audioContext.sampleRate);
-  const samples = buffer.getChannelData(0);
-  for (let index = 0; index < samples.length; index++) samples[index] = Math.random() * 2 - 1;
-  const rainSource = audioContext.createBufferSource();
-  const rainFilter = audioContext.createBiquadFilter();
-  rainAudioGain = audioContext.createGain();
-  rainSource.buffer = buffer;
-  rainSource.loop = true;
-  rainFilter.type = 'bandpass';
-  rainFilter.frequency.value = 2600;
-  rainFilter.Q.value = 0.45;
-  rainAudioGain.gain.value = 0;
-  rainSource.connect(rainFilter).connect(rainAudioGain).connect(masterAudioGain);
-  rainSource.start();
-  return audioContext;
-}
-
-function setRainAudioLevel(level) {
-  if (!rainAudioGain || !audioContext) return;
-  rainAudioGain.gain.setTargetAtTime(audioEnabled ? level : 0, audioContext.currentTime, 0.18);
-}
-
-function playToneSequence(notes) {
-  const context = ensureAudio();
-  if (!context || !audioEnabled || !masterAudioGain) return;
-  let startTime = context.currentTime + 0.02;
-  notes.forEach(({ frequency, duration, volume = 0.16 }) => {
-    const oscillator = context.createOscillator();
-    const gain = context.createGain();
-    oscillator.type = 'sine';
-    oscillator.frequency.value = frequency;
-    gain.gain.setValueAtTime(0.0001, startTime);
-    gain.gain.exponentialRampToValueAtTime(volume, startTime + 0.025);
-    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-    oscillator.connect(gain).connect(masterAudioGain);
-    oscillator.start(startTime);
-    oscillator.stop(startTime + duration + 0.03);
-    startTime += duration + 0.045;
-  });
-}
-
-function setAudioEnabled(enabled) {
-  audioEnabled = enabled;
+function updateAudioToggle() {
+  const enabled = isAudioEnabled();
   soundToggle.setAttribute('aria-pressed', String(enabled));
   soundToggle.textContent = enabled ? '🔊 環境音・通知音：オン' : '🔇 環境音・通知音：オフ';
-  if (!audioContext || !masterAudioGain) return;
-  masterAudioGain.gain.setTargetAtTime(enabled ? 0.55 : 0, audioContext.currentTime, 0.05);
 }
 
 soundToggle.addEventListener('click', () => {
   ensureAudio();
-  setAudioEnabled(!audioEnabled);
+  setAudioEnabled(!isAudioEnabled());
+  updateAudioToggle();
 });
+updateAudioToggle();
 
 let deferredInstallPrompt = null;
 
@@ -1566,24 +1524,12 @@ const DEFAULT_HEIGHT_OVERRIDES = [
   ["111,117",1], ["111,120",1], ["114,115",-1], ["113,117",-1], ["112,119",-1]
 ];
 
-const PAINT_STORAGE_KEY = 'suiboTilePaintOverrides';
 const tilePaintOverrides = new Map(DEFAULT_TILE_OVERRIDES);
-try {
-  const saved = JSON.parse(localStorage.getItem(PAINT_STORAGE_KEY) || '[]');
-  for (const [key, value] of saved) tilePaintOverrides.set(key, value);
-} catch (error) {
-  console.warn('Could not load paint overrides:', error);
-}
+for (const [key, value] of loadTilePaintOverrides()) tilePaintOverrides.set(key, value);
 
-const HEIGHT_STORAGE_KEY = 'suiboHeightPaintOverrides';
 if (!mapConfig.terrain.flatDevelopment) {
   for (const [key, value] of DEFAULT_HEIGHT_OVERRIDES) heightPaintOverrides.set(key, value);
-  try {
-    const savedHeights = JSON.parse(localStorage.getItem(HEIGHT_STORAGE_KEY) || '[]');
-    for (const [key, value] of savedHeights) heightPaintOverrides.set(key, value);
-  } catch (error) {
-    console.warn('Could not load height overrides:', error);
-  }
+  for (const [key, value] of loadHeightPaintOverrides()) heightPaintOverrides.set(key, value);
 }
 
 // Range-select "floating" placements: rectangular slabs of blocks that sit in
@@ -1591,17 +1537,11 @@ if (!mapConfig.terrain.flatDevelopment) {
 // (that map is one solid column per x/z, always rooted at the ground), so
 // each floating slab is stored as its own record: { minX, maxX, minZ, maxZ,
 // bottom, top, material }, keyed by an incrementing id.
-const FLOATING_STORAGE_KEY = 'suiboFloatingRangeBlocks';
 const floatingBlocks = new Map();
 let floatingBlockSeq = 0;
-try {
-  const savedFloating = JSON.parse(localStorage.getItem(FLOATING_STORAGE_KEY) || '[]');
-  for (const [key, value] of savedFloating) {
-    floatingBlocks.set(key, value);
-    floatingBlockSeq = Math.max(floatingBlockSeq, parseInt(key, 10) + 1 || 0);
-  }
-} catch (error) {
-  console.warn('Could not load floating range blocks:', error);
+for (const [key, value] of loadFloatingBlocks()) {
+  floatingBlocks.set(key, value);
+  floatingBlockSeq = Math.max(floatingBlockSeq, parseInt(key, 10) + 1 || 0);
 }
 
 // Moved-building positions from the "select and move" edit tool. Keyed by
@@ -1611,7 +1551,6 @@ try {
 // defaults ship the same way as the tile/height overrides above; live
 // localStorage edits from this browser layer on top and are applied once
 // all structures exist (see loadStructureOffsets below buildEvacuationShelter).
-const STRUCTURE_STORAGE_KEY = 'suiboStructureOffsets';
 const DEFAULT_STRUCTURE_OFFSETS = [
   ['EvacuationShelter', { x: -87, z: -32 }]
 ];
@@ -3547,12 +3486,7 @@ buildEvacuationShelter();
 // browser layered on top (same override pattern as the tile/height data).
 (function loadStructureOffsets() {
   const offsets = new Map(DEFAULT_STRUCTURE_OFFSETS);
-  try {
-    const saved = JSON.parse(localStorage.getItem(STRUCTURE_STORAGE_KEY) || '[]');
-    for (const [name, offset] of saved) offsets.set(name, offset);
-  } catch (error) {
-    console.warn('Could not load structure offsets:', error);
-  }
+  for (const [name, offset] of loadStructureOffsetsData()) offsets.set(name, offset);
   for (const entry of movableStructures) {
     const offset = offsets.get(entry.group.name);
     if (offset) setStructureOffset(entry, offset.x, offset.z);
@@ -5837,13 +5771,11 @@ function trainingClockReference(now = performance.now()) {
 }
 
 function savePaintOverrides() {
-  try {
-    localStorage.setItem(PAINT_STORAGE_KEY, JSON.stringify([...tilePaintOverrides]));
-    localStorage.setItem(HEIGHT_STORAGE_KEY, JSON.stringify([...heightPaintOverrides]));
-    localStorage.setItem(FLOATING_STORAGE_KEY, JSON.stringify([...floatingBlocks]));
-  } catch (error) {
-    console.warn('Could not save paint overrides:', error);
-  }
+  saveTerrainEditorState({
+    tiles: [...tilePaintOverrides],
+    heights: [...heightPaintOverrides],
+    floating: [...floatingBlocks]
+  });
 }
 
 let heightDirty = false;
@@ -6467,14 +6399,10 @@ function structureAtPointer(clientX, clientY) {
 }
 
 function saveStructureOffsets() {
-  try {
-    const moved = movableStructures
-      .filter((s) => s.offsetX !== 0 || s.offsetZ !== 0)
-      .map((s) => [s.group.name, { x: s.offsetX, z: s.offsetZ }]);
-    localStorage.setItem(STRUCTURE_STORAGE_KEY, JSON.stringify(moved));
-  } catch (error) {
-    console.warn('Could not save structure offsets:', error);
-  }
+  const moved = movableStructures
+    .filter((s) => s.offsetX !== 0 || s.offsetZ !== 0)
+    .map((s) => [s.group.name, { x: s.offsetX, z: s.offsetZ }]);
+  saveStructureOffsetsData(moved);
 }
 
 // Places a structure at an absolute block offset from where it was built.
