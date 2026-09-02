@@ -18,7 +18,7 @@ import {
   loadTilePaintOverrides,
   saveStructureOffsets as saveStructureOffsetsData,
   saveTerrainEditorState
-} from './modules/editor-storage.js?v=20260901-24';
+} from './modules/editor-storage.js?v=20260901-29';
 import {
   ensureAudio,
   isAudioEnabled,
@@ -345,6 +345,11 @@ function selectScenario(id) {
   updateWaterObservationPoint(true);
 }
 
+// The river reaches the second large map cell from the east. Move the entire
+// land-side city layout one 15-block cell west so roads begin in the third
+// cell and every house/gameplay object keeps its relative position.
+const CITY_LAYOUT_SHIFT_BLOCKS = -15;
+
 const mapConfig = Object.freeze({
   // 1 Three.js unit = 1 metre. Keep this value fixed so assets remain the same scale.
   blockSize: 0.3125,
@@ -358,7 +363,7 @@ const mapConfig = Object.freeze({
   },
   cellBlocks: 15,
   playerStartBlock: {
-    x: 75 + 7 * 15,
+    x: 75 + 7 * 15 + CITY_LAYOUT_SHIFT_BLOCKS,
     z: 187.5
   },
   terrain: {
@@ -370,7 +375,7 @@ const mapConfig = Object.freeze({
   structures: {
     startHouse: {
       centerBlock: {
-        x: 52.5 + 7 * 15,
+        x: 52.5 + 7 * 15 + CITY_LAYOUT_SHIFT_BLOCKS,
         z: 182.5
       },
       halfBlocks: 7
@@ -379,7 +384,7 @@ const mapConfig = Object.freeze({
       {
         name: 'SmallBlueHouse',
         label: '青い家',
-        centerBlock: { x: 52.5 + 7 * 15, z: 162.5 },
+        centerBlock: { x: 52.5 + 7 * 15 + CITY_LAYOUT_SHIFT_BLOCKS, z: 162.5 },
         halfBlocks: 6,
         wallHeightBlocks: 10,
         roofHeightBlocks: 4,
@@ -390,7 +395,7 @@ const mapConfig = Object.freeze({
         label: 'アパート',
         // Keep the building in the north-west city block instead of letting
         // the new east-west road pass through its southern rooms.
-        centerBlock: { x: 146, z: 132 },
+        centerBlock: { x: 146 + CITY_LAYOUT_SHIFT_BLOCKS, z: 132 },
         halfBlocks: 7,
         wallHeightBlocks: 24,
         roofHeightBlocks: 2,
@@ -400,21 +405,26 @@ const mapConfig = Object.freeze({
     ]
   },
   areas: {
+    // Fresh road layout for the city redevelopment phase. The old painted
+    // road data is not reused; every initial road below is generated from
+    // these coordinates so the network stays reproducible.
+    roadsEnabled: true,
+    roadSurface: 'paving',
+    stairsEnabled: false,
     roadFromHouse: {
       widthBlocks: 15,
-      gapFromHouseRightBlocks: 5,
-      targetCellFromNorth: 9
+      eastEdgeFromRightBlocks: 26 - CITY_LAYOUT_SHIFT_BLOCKS,
+      // Continue the start road straight to the north map edge. The former
+      // left-turn-only NorthStreet has been removed from this corridor.
+      northEndBlock: 0
     },
     urbanRoads: {
       surfaceRaiseMeters: 0.09,
       sidewalkWidthBlocks: 3.2,
       sidewalkHeightMeters: 0.2,
-      crossStreet: { minX: 118, maxX: 210, centerZ: 148, widthBlocks: 11 },
-      riverfront: { minZ: 104, maxZ: 190, innerOffsetBlocks: 4, widthBlocks: 10 },
+      crossStreet: { minX: 118 + CITY_LAYOUT_SHIFT_BLOCKS, maxX: 210 + CITY_LAYOUT_SHIFT_BLOCKS, centerZ: 148, widthBlocks: 11 },
       secondaryRoads: [
-        { name: 'EvacuationAvenue', orientation: 'vertical', center: 162, min: 104, max: 148, widthBlocks: 9 },
-        { name: 'NorthStreet', orientation: 'horizontal', center: 108, min: 40.5, max: 190, widthBlocks: 9 },
-        { name: 'ShelterApproach', orientation: 'vertical', center: 40.5, min: 50, max: 112, widthBlocks: 9 }
+        { name: 'ShelterApproach', orientation: 'vertical', center: 40.5 + CITY_LAYOUT_SHIFT_BLOCKS, min: 50, max: 112, widthBlocks: 9 }
       ],
       bridge: { centerZ: 148, widthBlocks: 9, bankOverlapBlocks: 4, deckHeightMeters: 0.28 }
     },
@@ -725,17 +735,15 @@ function riverPointAt(blockZ, lane = 0.5) {
 }
 
 function getRoadFromHouseBounds() {
-  const house = mapConfig.structures.startHouse;
   const road = mapConfig.areas.roadFromHouse;
-  const left = house.centerBlock.x + house.halfBlocks + 0.5 + road.gapFromHouseRightBlocks;
-  const right = left + road.widthBlocks;
-  const targetZ = (road.targetCellFromNorth - 0.5) * mapConfig.cellBlocks;
+  const right = mapConfig.blocks.width - road.eastEdgeFromRightBlocks;
+  const left = right - road.widthBlocks;
   const bottomZ = mapConfig.blocks.depth;
 
   return {
     left,
     right,
-    top: targetZ,
+    top: road.northEndBlock,
     bottom: bottomZ
   };
 }
@@ -783,6 +791,7 @@ function stairLocalPosition(blockX, blockZ) {
 }
 
 function isStairBlock(blockX, blockZ) {
+  if (!mapConfig.areas.roadsEnabled || !mapConfig.areas.stairsEnabled) return false;
   const { along, across, stair } = stairLocalPosition(blockX + 0.5, blockZ + 0.5);
   return along >= -stair.overlap
     && along < stair.length
@@ -790,6 +799,7 @@ function isStairBlock(blockX, blockZ) {
 }
 
 function isRoadBlock(blockX, blockZ) {
+  if (!mapConfig.areas.roadsEnabled) return false;
   const road = getRoadFromHouseBounds();
   return blockX >= Math.floor(road.left)
     && blockX <= Math.ceil(road.right) - 1
@@ -798,20 +808,13 @@ function isRoadBlock(blockX, blockZ) {
 }
 
 function isUrbanRoadBlock(blockX, blockZ) {
+  if (!mapConfig.areas.roadsEnabled) return false;
   const urban = mapConfig.areas.urbanRoads;
   const halfCrossWidth = urban.crossStreet.widthBlocks / 2;
   const isCrossStreet = blockX >= urban.crossStreet.minX
     && blockX < urban.crossStreet.maxX
     && blockZ >= urban.crossStreet.centerZ - halfCrossWidth
     && blockZ <= urban.crossStreet.centerZ + halfCrossWidth;
-
-  const riverEdge = riverEdgesAtBlockZ(blockZ).left;
-  const riverfrontOuter = riverEdge - urban.riverfront.innerOffsetBlocks;
-  const riverfrontInner = riverfrontOuter - urban.riverfront.widthBlocks;
-  const isRiverfront = blockZ >= urban.riverfront.minZ
-    && blockZ <= urban.riverfront.maxZ
-    && blockX >= riverfrontInner
-    && blockX <= riverfrontOuter;
 
   const isSecondaryRoad = urban.secondaryRoads.some((road) => {
     const halfWidth = road.widthBlocks / 2;
@@ -822,18 +825,29 @@ function isUrbanRoadBlock(blockX, blockZ) {
         && blockX >= road.min && blockX <= road.max;
   });
 
-  return isCrossStreet || isRiverfront || isSecondaryRoad;
+  return isCrossStreet || isSecondaryRoad;
 }
 
 function isUrbanSidewalkBlock(blockX, blockZ) {
+  if (!mapConfig.areas.roadsEnabled) return false;
   const urban = mapConfig.areas.urbanRoads;
   const road = getRoadFromHouseBounds();
   const bridge = bridgeBoundsAt();
   const width = urban.sidewalkWidthBlocks;
   const crossMinZ = urban.crossStreet.centerZ - urban.crossStreet.widthBlocks / 2;
   const crossMaxZ = urban.crossStreet.centerZ + urban.crossStreet.widthBlocks / 2;
-  const outsideIntersection = (blockZ >= road.top && blockZ <= crossMinZ)
-    || (blockZ >= crossMaxZ && blockZ <= road.bottom);
+  const mainRoadIntersections = [
+    { min: crossMinZ, max: crossMaxZ },
+    ...urban.secondaryRoads
+      .filter((secondary) => secondary.orientation === 'horizontal'
+        && secondary.min <= road.right && secondary.max >= road.left)
+      .map((secondary) => ({
+        min: secondary.center - secondary.widthBlocks / 2,
+        max: secondary.center + secondary.widthBlocks / 2
+      }))
+  ];
+  const outsideIntersection = blockZ >= road.top && blockZ <= road.bottom
+    && !mainRoadIntersections.some((range) => blockZ >= range.min && blockZ <= range.max);
   const besideMainRoad = outsideIntersection && (
     (blockX >= road.left - width && blockX <= road.left)
     || (blockX >= road.right && blockX <= road.right + width)
@@ -876,6 +890,7 @@ function bridgeDeckHeightMeters() {
 }
 
 function isInsideBridgeDeckBlocks(blockX, blockZ) {
+  if (!mapConfig.areas.roadsEnabled) return false;
   const bounds = bridgeBoundsAt(blockZ);
   return blockX >= bounds.minBlockX && blockX <= bounds.maxBlockX
     && blockZ >= bounds.minBlockZ && blockZ <= bounds.maxBlockZ;
@@ -902,6 +917,7 @@ function getPlateauPathBounds() {
 }
 
 function isPlateauPathBlock(blockX, blockZ) {
+  if (!mapConfig.areas.roadsEnabled || !mapConfig.areas.stairsEnabled) return false;
   const bounds = getPlateauPathBounds();
   if (blockX < bounds.minBlockX || blockX >= bounds.maxBlockX) return false;
   if (blockZ < 0 || blockZ >= bounds.endBlockZ) return false;
@@ -1524,7 +1540,7 @@ const DEFAULT_HEIGHT_OVERRIDES = [
   ["111,117",1], ["111,120",1], ["114,115",-1], ["113,117",-1], ["112,119",-1]
 ];
 
-const tilePaintOverrides = new Map(DEFAULT_TILE_OVERRIDES);
+const tilePaintOverrides = new Map();
 for (const [key, value] of loadTilePaintOverrides()) tilePaintOverrides.set(key, value);
 
 if (!mapConfig.terrain.flatDevelopment) {
@@ -1557,14 +1573,14 @@ const DEFAULT_STRUCTURE_OFFSETS = [
 
 function baseTileType(x, z) {
   if (isRiverBlock(x, z)) return 'river';
-  if (isRoadBlock(x, z)) return 'road';
-  if (isUrbanRoadBlock(x, z)) return 'road';
+  if (isRoadBlock(x, z)) return mapConfig.areas.roadSurface;
+  if (isUrbanRoadBlock(x, z)) return mapConfig.areas.roadSurface;
   // The block ramp generates its own asphalt top. Do not place a ground tile
   // there too, otherwise the two coplanar surfaces flicker. Checked before
   // the plateau path so the deep overlap between the ramp and the straight
   // path doesn't get double-covered.
   if (isRampActive(x, z)) return 'stair';
-  if (isPlateauPathBlock(x, z)) return 'road';
+  if (isPlateauPathBlock(x, z)) return mapConfig.areas.roadSurface;
   return 'grass';
 }
 
@@ -1852,7 +1868,7 @@ function createStoneRoad() {
   return { accents };
 }
 
-createStoneRoad();
+if (mapConfig.areas.roadsEnabled && mapConfig.areas.roadSurface === 'road') createStoneRoad();
 
 function setRiverFlowMatrix(mesh, index, blockZ, lane, bob = 0) {
   const current = riverPointAt(blockZ, lane);
@@ -2025,7 +2041,7 @@ function createRiverFences() {
     let previous = null;
     for (let z = 2; z <= tilesDeep - 2; z += fence.postSpacingBlocks) {
       const bridge = mapConfig.areas.urbanRoads.bridge;
-      if (Math.abs(z - bridge.centerZ) <= bridge.widthBlocks / 2 + 2) {
+      if (mapConfig.areas.roadsEnabled && Math.abs(z - bridge.centerZ) <= bridge.widthBlocks / 2 + 2) {
         previous = null;
         continue;
       }
@@ -2214,15 +2230,6 @@ function createUrbanInfrastructure() {
   for (let x = urban.crossStreet.minX + 3; x < bounds.minBlockX; x += 6) {
     streetMarks.push({ x, z: urban.crossStreet.centerZ, rotation: Math.PI / 2 });
   }
-  for (let z = urban.riverfront.minZ + 3; z < urban.riverfront.maxZ; z += 6) {
-    const currentEdge = riverEdgesAtBlockZ(z).left;
-    const nextEdge = riverEdgesAtBlockZ(Math.min(tilesDeep - 1, z + 2)).left;
-    streetMarks.push({
-      x: currentEdge - urban.riverfront.innerOffsetBlocks - urban.riverfront.widthBlocks / 2,
-      z,
-      rotation: Math.atan2((nextEdge - currentEdge) * tileSize, 2 * tileSize)
-    });
-  }
   for (const road of urban.secondaryRoads) {
     for (let along = road.min + 3; along < road.max - 2; along += 6) {
       streetMarks.push(road.orientation === 'vertical'
@@ -2276,10 +2283,12 @@ function createUrbanInfrastructure() {
 // value from aborting the rest of the module before the character buttons
 // receive their click handlers.
 let urbanInfrastructure = null;
-try {
-  urbanInfrastructure = createUrbanInfrastructure();
-} catch (error) {
-  console.error('Could not create the urban road infrastructure.', error);
+if (mapConfig.areas.roadsEnabled) {
+  try {
+    urbanInfrastructure = createUrbanInfrastructure();
+  } catch (error) {
+    console.error('Could not create the urban road infrastructure.', error);
+  }
 }
 
 // Map grid: north is -Z, the river is on the east (+X), and one cell is 15 blocks.
@@ -2713,6 +2722,16 @@ function createUrbanStreetscape() {
   const bridge = bridgeBoundsAt();
   const crossMinZ = urban.crossStreet.centerZ - urban.crossStreet.widthBlocks / 2;
   const crossMaxZ = urban.crossStreet.centerZ + urban.crossStreet.widthBlocks / 2;
+  const mainRoadIntersections = [
+    { min: crossMinZ, max: crossMaxZ },
+    ...urban.secondaryRoads
+      .filter((secondary) => secondary.orientation === 'horizontal'
+        && secondary.min <= road.right && secondary.max >= road.left)
+      .map((secondary) => ({
+        min: secondary.center - secondary.widthBlocks / 2,
+        max: secondary.center + secondary.widthBlocks / 2
+      }))
+  ].sort((a, b) => a.min - b.min);
   const sidewalkWidthBlocks = urban.sidewalkWidthBlocks;
   const sidewalkHeight = urban.sidewalkHeightMeters;
   const sidewalkMaterial = new THREE.MeshStandardMaterial({
@@ -2745,8 +2764,14 @@ function createUrbanStreetscape() {
     [road.right, road.right + sidewalkWidthBlocks]
   ];
   for (const [minX, maxX] of verticalSidewalks) {
-    addSidewalk('MainRoadSidewalkNorth', minX, maxX, road.top, crossMinZ);
-    addSidewalk('MainRoadSidewalkSouth', minX, maxX, crossMaxZ, road.bottom);
+    let segmentStart = road.top;
+    mainRoadIntersections.forEach((range, index) => {
+      const clippedMin = Math.max(road.top, range.min);
+      const clippedMax = Math.min(road.bottom, range.max);
+      addSidewalk(`MainRoadSidewalk-${index}`, minX, maxX, segmentStart, clippedMin);
+      segmentStart = Math.max(segmentStart, clippedMax);
+    });
+    addSidewalk('MainRoadSidewalk-South', minX, maxX, segmentStart, road.bottom);
   }
 
   const horizontalSegments = [
@@ -2774,7 +2799,7 @@ function createUrbanStreetscape() {
 
   const edgeInsetBlocks = 0.45;
   for (let z = road.top + 6; z < road.bottom - 4; z += 11) {
-    if (z > crossMinZ - 5 && z < crossMaxZ + 5) continue;
+    if (mainRoadIntersections.some((range) => z > range.min - 5 && z < range.max + 5)) continue;
     addFurnishing(treeSites, road.left - sidewalkWidthBlocks + edgeInsetBlocks, z);
     addFurnishing(lampSites, road.left - edgeInsetBlocks, z);
     addFurnishing(treeSites, road.right + sidewalkWidthBlocks - edgeInsetBlocks, z);
@@ -2787,7 +2812,6 @@ function createUrbanStreetscape() {
     addFurnishing(treeSites, x, crossMaxZ + sidewalkWidthBlocks - edgeInsetBlocks);
     addFurnishing(lampSites, x, crossMaxZ + edgeInsetBlocks);
   }
-
   const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x65442c, roughness: 0.96 });
   const leafMaterial = new THREE.MeshStandardMaterial({ color: 0x3d873c, roughness: 0.9 });
   const lampMaterial = new THREE.MeshStandardMaterial({ color: 0x3c474d, roughness: 0.62, metalness: 0.34 });
@@ -2970,10 +2994,12 @@ function createUrbanStreetscape() {
 }
 
 let urbanStreetscape = null;
-try {
-  urbanStreetscape = createUrbanStreetscape();
-} catch (error) {
-  console.error('Could not create the urban streetscape.', error);
+if (mapConfig.areas.roadsEnabled) {
+  try {
+    urbanStreetscape = createUrbanStreetscape();
+  } catch (error) {
+    console.error('Could not create the urban streetscape.', error);
+  }
 }
 
 // --- Evacuation shelter ------------------------------------------------
@@ -3369,7 +3395,7 @@ function buildEvacuationShelter() {
     // cell N's center is at (N - 0.5) * cellBlocks. "左から2マス目、上から5マス目"
     // relative to the map as it was before the 7-cell west expansion, so
     // +WEST_EXPANSION_BLOCKS keeps it physically in the same spot.
-    centerBlock: { x: 1.5 * mapConfig.cellBlocks + WEST_EXPANSION_BLOCKS, z: 4.5 * mapConfig.cellBlocks },
+    centerBlock: { x: 1.5 * mapConfig.cellBlocks + WEST_EXPANSION_BLOCKS + CITY_LAYOUT_SHIFT_BLOCKS, z: 4.5 * mapConfig.cellBlocks },
     // Width x3 (11 -> 33 blocks across, half 5 -> 16), height x1.5 (7 -> 11).
     halfBlocks: 16,
     wallHeightBlocks: 11,
@@ -3501,7 +3527,7 @@ buildEvacuationShelter();
 // LIVE collider (not its static config) so this keeps working if the
 // shelter is ever moved again with the edit-mode "select and move" tool.
 const missionShelter = movableStructures.find((s) => s.group.name === 'EvacuationShelter');
-const CHECKPOINT_BLOCK = { x: 177, z: 170 };
+const CHECKPOINT_BLOCK = { x: 177 + CITY_LAYOUT_SHIFT_BLOCKS, z: 170 };
 const checkpointPosition = new THREE.Vector3(
   worldXFromBlock(CHECKPOINT_BLOCK.x),
   getWalkableHeight(worldXFromBlock(CHECKPOINT_BLOCK.x), worldZFromBlock(CHECKPOINT_BLOCK.z)),
@@ -3563,7 +3589,12 @@ let safeRouteRecalculateTimer = 0;
 // The low road between the elderly person and the child closes at alert
 // level 3. The blocked footprint spans the full 15-block road plus a small
 // shoulder, forcing the route search to use the higher ground on either side.
-const ROAD_CLOSURE_BOUNDS = Object.freeze({ minBlockX: 169, maxBlockX: 187, minBlockZ: 146, maxBlockZ: 151 });
+const ROAD_CLOSURE_BOUNDS = Object.freeze({
+  minBlockX: 169 + CITY_LAYOUT_SHIFT_BLOCKS,
+  maxBlockX: 187 + CITY_LAYOUT_SHIFT_BLOCKS,
+  minBlockZ: 146,
+  maxBlockZ: 151
+});
 let roadClosureActive = false;
 let roadClosureRouteConfirmed = false;
 const roadClosureGroup = new THREE.Group();
@@ -4514,7 +4545,9 @@ function buildBlockRamp() {
   if (blockRamp) {
     scene.remove(blockRamp.asphaltMesh);
     scene.remove(blockRamp.fillMesh);
+    blockRamp = null;
   }
+  if (!mapConfig.areas.roadsEnabled || !mapConfig.areas.stairsEnabled) return;
   blockRamp = createBlockRamp();
 }
 buildBlockRamp();
@@ -4815,9 +4848,9 @@ function updateTrainingStatus(now) {
 
 // --- Rescue NPCs ("近くの人に声をかけて助け合おう") -------------------------
 const NPC_HELPER_CONFIGS = [
-  { id: 'elderly', label: '高齢者', type: 'rescue', blockX: 177, blockZ: 155, scale: 0.9, followSpeed: 2.25 },
-  { id: 'child', label: '子ども', type: 'rain', blockX: 177, blockZ: 142, scale: 0.72, followSpeed: 2.55 },
-  { id: 'resident', label: '近隣住民', type: 'rescue', blockX: 177, blockZ: 129, scale: 0.96, followSpeed: 2.8 }
+  { id: 'elderly', label: '高齢者', type: 'rescue', blockX: 177 + CITY_LAYOUT_SHIFT_BLOCKS, blockZ: 155, scale: 0.9, followSpeed: 2.25 },
+  { id: 'child', label: '子ども', type: 'rain', blockX: 177 + CITY_LAYOUT_SHIFT_BLOCKS, blockZ: 142, scale: 0.72, followSpeed: 2.55 },
+  { id: 'resident', label: '近隣住民', type: 'rescue', blockX: 177 + CITY_LAYOUT_SHIFT_BLOCKS, blockZ: 129, scale: 0.96, followSpeed: 2.8 }
 ];
 
 function makeNpcStatusMarker(label) {
@@ -6823,6 +6856,9 @@ function initMinimap() {
     gridLines.push(`<line x1="2" y1="${y}" x2="${tilesWide - 2}" y2="${y}" stroke="#385f4e" stroke-width=".45"/>`);
   }
   minimapGrid.innerHTML = gridLines.join('');
+  if (!mapConfig.areas.roadsEnabled) {
+    minimapRoads.innerHTML = '';
+  }
   const road = getRoadFromHouseBounds();
   const stair = getStairProfile();
   const stairHalf = stair.width / 2;
@@ -6846,12 +6882,7 @@ function initMinimap() {
   const plateauPath = getPlateauPathBounds();
   const urban = mapConfig.areas.urbanRoads;
   const bridgeBounds = bridgeBoundsAt();
-  const riverfrontPoints = [];
-  for (let z = urban.riverfront.minZ; z <= urban.riverfront.maxZ; z += 4) {
-    const riverEdge = riverEdgesAtBlockZ(z).left;
-    riverfrontPoints.push(`${(riverEdge - urban.riverfront.innerOffsetBlocks - urban.riverfront.widthBlocks / 2).toFixed(2)},${z}`);
-  }
-  minimapRoads.innerHTML = `
+  if (mapConfig.areas.roadsEnabled) minimapRoads.innerHTML = `
     <rect x="${road.left.toFixed(2)}" y="${road.top.toFixed(2)}" width="${(road.right - road.left).toFixed(2)}" height="${(road.bottom - road.top).toFixed(2)}" fill="#b8afa4" opacity=".9"/>
     <polygon points="${connectorPoints}" fill="#b8afa4" opacity=".94"/>
     <polygon points="${stairPoints}" fill="#b8afa4" opacity=".92"/>
@@ -6860,7 +6891,6 @@ function initMinimap() {
     ${urban.secondaryRoads.map((secondary) => secondary.orientation === 'vertical'
       ? `<rect x="${secondary.center - secondary.widthBlocks / 2}" y="${secondary.min}" width="${secondary.widthBlocks}" height="${secondary.max - secondary.min}" fill="#777d80" opacity=".96"/>`
       : `<rect x="${secondary.min}" y="${secondary.center - secondary.widthBlocks / 2}" width="${secondary.max - secondary.min}" height="${secondary.widthBlocks}" fill="#777d80" opacity=".96"/>`).join('')}
-    <polyline points="${riverfrontPoints.join(' ')}" fill="none" stroke="#777d80" stroke-width="${urban.riverfront.widthBlocks}" stroke-linecap="round" stroke-linejoin="round" opacity=".96"/>
     <rect x="${bridgeBounds.minBlockX.toFixed(2)}" y="${bridgeBounds.minBlockZ.toFixed(2)}" width="${(bridgeBounds.maxBlockX - bridgeBounds.minBlockX).toFixed(2)}" height="${(bridgeBounds.maxBlockZ - bridgeBounds.minBlockZ).toFixed(2)}" fill="#50575b" stroke="#e8e1c8" stroke-width=".8"/>
   `;
   const leftEdgePoints = [];

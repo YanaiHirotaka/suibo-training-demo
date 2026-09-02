@@ -1,6 +1,9 @@
 import { readStoredJson, writeStoredJson } from './storage.js?v=20260901-24';
 
-const TILE_PAINT_STORAGE_KEY = 'suiboTilePaintOverrides';
+// The rebuilt procedural road network starts with a fresh editing layer, so
+// neither the retired roads nor edits from the temporary roadless map can
+// overwrite the new layout. Other editor state remains intact.
+const TILE_PAINT_STORAGE_KEY = 'suiboTilePaintOverrides-v4-shifted-road-layout';
 const HEIGHT_PAINT_STORAGE_KEY = 'suiboHeightPaintOverrides';
 const FLOATING_BLOCK_STORAGE_KEY = 'suiboFloatingRangeBlocks';
 const STRUCTURE_OFFSET_STORAGE_KEY = 'suiboStructureOffsets';
