@@ -30,6 +30,15 @@ import {
   EVACUATION_SHELTER_CONFIG,
   shelterHighGroundHeightBlocks
 } from './modules/shelter-terrain.js?v=20260902-1';
+import {
+  FLOOD_ARRIVAL_BAND_COUNT,
+  MAX_FLOOD_ARRIVAL_RATIO,
+  buildConnectedFloodMap,
+  connectedFloodArrivalRatio,
+  floodArrivalBandIndex,
+  localFloodLevelMeters
+} from './modules/flood-spread.js?v=20260902-3';
+import { cityReliefHeightBlocks } from './modules/terrain-elevation.js?v=20260902-1';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -344,6 +353,7 @@ function selectScenario(id) {
   floodGaugeTickLabels.forEach((label, index) => {
     label.textContent = (activeScenario.flood.maxLevelMeters * (3 - index) / 3).toFixed(1);
   });
+  rebuildFloodSurfaceTiles();
   buildHazardOverlay();
   updateTrainingStatus(performance.now());
   updateWaterObservationPoint(true);
@@ -374,7 +384,10 @@ const mapConfig = Object.freeze({
     // During the city-layout phase, start from one flat ground plane. Height
     // editing still works after load, but the old baked and saved height
     // deltas are intentionally not applied to this development revision.
-    flatDevelopment: true
+    flatDevelopment: true,
+    // Keep the old mountain/ramp terrain disabled, but give the redeveloped
+    // city a small, fixed relief that the connected flood model can read.
+    staticFloodRelief: true
   },
   structures: {
     // This is the canonical shelter position that was previously represented
@@ -1007,6 +1020,15 @@ function getBaseTerrainHeightBlocks(blockX, blockZ) {
   if (isRiverBlock(blockX, blockZ)) return 0;
   const shelterHighGround = getShelterHighGroundHeightBlocks(blockX, blockZ);
   if (shelterHighGround > 0) return shelterHighGround;
+  if (mapConfig.terrain.staticFloodRelief) {
+    const fixedRelief = cityReliefHeightBlocks({
+      distanceFromRiverBlocks: floodDistanceFromRiverBlocks(blockX, blockZ),
+      blockZ,
+      mapDepthBlocks: tilesDeep,
+      isRoad: isRoadBlock(blockX, blockZ) || isUrbanRoadBlock(blockX, blockZ)
+    });
+    return terrainHeightLimitedByHouses(blockX, blockZ, fixedRelief);
+  }
   if (mapConfig.terrain.flatDevelopment) return 0;
   // The 7-cell western expansion just extrudes whatever height the old west
   // edge (now at WEST_EXPANSION_BLOCKS) had for this row, so existing terrain
@@ -3792,12 +3814,13 @@ function routeNodeCost(from, to) {
   const baseDistance = Math.hypot(toWorld.x - fromWorld.x, toWorld.z - fromWorld.z);
   const fromHeight = getWalkableHeight(fromWorld.x, fromWorld.z);
   const toHeight = getWalkableHeight(toWorld.x, toWorld.z);
-  const forecastLevel = Math.min(
+  const forecastGlobalLevel = Math.min(
     activeScenario.flood.maxLevelMeters,
     floodWaterLevel + activeScenario.flood.forecastRiseMeters
   );
   const routeBlockX = Math.round(toWorld.blockX);
   const routeBlockZ = Math.round(toWorld.blockZ);
+  const forecastLevel = floodLevelAtBlock(routeBlockX, routeBlockZ, forecastGlobalLevel);
   const predictedDepth = isFloodableTile(routeBlockX, routeBlockZ)
     ? Math.max(0, forecastLevel - toHeight)
     : 0;
@@ -3916,8 +3939,9 @@ function renderSafeRoute() {
     distanceSinceArrow = 0;
     const arrow = new THREE.Mesh(safeRouteArrowGeometry, safeRouteArrowMaterial);
     const groundSurfaceY = getWalkableHeight(point.x, point.z) + 0.055;
+    const localFloodLevel = floodLevelAtPosition(point.x, point.z);
     const routeSurfaceY = isFloodablePosition(point.x, point.z)
-      ? Math.max(groundSurfaceY, floodWaterLevel + 0.045)
+      ? Math.max(groundSurfaceY, localFloodLevel + 0.045)
       : groundSurfaceY;
     arrow.position.set(point.x, routeSurfaceY, point.z);
     arrow.rotation.y = Math.atan2(previous.x - point.x, previous.z - point.z);
@@ -3951,8 +3975,9 @@ function updateSafeRoute(dt) {
 function updateSafeRouteArrowHeights() {
   safeRouteArrowGroup.children.forEach((arrow) => {
     const groundSurfaceY = getWalkableHeight(arrow.position.x, arrow.position.z) + 0.055;
+    const localFloodLevel = floodLevelAtPosition(arrow.position.x, arrow.position.z);
     arrow.position.y = isFloodablePosition(arrow.position.x, arrow.position.z)
-      ? Math.max(groundSurfaceY, floodWaterLevel + 0.045)
+      ? Math.max(groundSurfaceY, localFloodLevel + 0.045)
       : groundSurfaceY;
   });
 }
@@ -4196,10 +4221,9 @@ function updateMissionGuidance() {
 // --------------------------------------------------------------------------
 
 // --- Rising flood water -----------------------------------------------------
-// Every outdoor land tile can flood. The actual water depth is still decided
-// by comparing the rising water level with each tile's walkable height, so
-// raised terrain and the bridge remain safe while roads, paving, and grass at
-// the same low elevation are inundated consistently.
+// Water reaches river-adjacent land first and follows connected low terrain.
+// Ridges delay the cells behind them until the water is high enough to cross;
+// the shelter high ground and bridge remain dry above the scenario maximum.
 const FLOOD_SPEED_MULTIPLIER = 0.55;
 let floodWaterLevel = 0;
 // Toggled from the edit-mode "水位上昇" checkbox. Pauses/resumes the rise in
@@ -4215,7 +4239,8 @@ const floodTileMaterial = new THREE.MeshBasicMaterial({
   depthWrite: false,
   side: THREE.DoubleSide
 });
-let floodSurfaceTiles = null;
+let floodSurfaceBands = [];
+let floodConnectivity = null;
 
 function isFloodableTile(blockX, blockZ) {
   if (blockX < 0 || blockX >= tilesWide || blockZ < 0 || blockZ >= tilesDeep) return false;
@@ -4230,34 +4255,130 @@ function isFloodablePosition(x, z) {
   return isFloodableTile(Math.floor(blockXFromWorld(x)), Math.floor(blockZFromWorld(z)));
 }
 
+function floodDistanceFromRiverBlocks(blockX, blockZ) {
+  const { left, right } = riverEdgesAtBlockZ(blockZ);
+  if (blockX < left) return left - blockX;
+  if (blockX > right) return blockX - right;
+  return 0;
+}
+
+function isFloodSourceTile(blockX, blockZ) {
+  return isRiverBlock(blockX + 1, blockZ)
+    || isRiverBlock(blockX - 1, blockZ)
+    || isRiverBlock(blockX, blockZ + 1)
+    || isRiverBlock(blockX, blockZ - 1);
+}
+
+function rebuildFloodConnectivity() {
+  floodConnectivity = buildConnectedFloodMap({
+    width: tilesWide,
+    depth: tilesDeep,
+    isFloodable: isFloodableTile,
+    heightAt: getTerrainHeightBlocks,
+    isSource: isFloodSourceTile
+  });
+}
+
+function floodArrivalRatioAtBlock(blockX, blockZ) {
+  if (
+    !floodConnectivity
+    || blockX < 0 || blockX >= tilesWide
+    || blockZ < 0 || blockZ >= tilesDeep
+  ) return 1;
+  const index = blockZ * tilesWide + blockX;
+  return connectedFloodArrivalRatio(
+    floodConnectivity.spillHeightBlocks[index],
+    floodConnectivity.distanceSteps[index],
+    {
+      blockSizeMeters: tileSize,
+      maximumLevelMeters: activeScenario.flood.maxLevelMeters,
+      mapWidthBlocks: tilesWide,
+      maximumTravelRatio: MAX_FLOOD_ARRIVAL_RATIO
+    }
+  );
+}
+
+function floodLevelAtBlock(blockX, blockZ, globalLevel = floodWaterLevel) {
+  if (!isFloodableTile(blockX, blockZ)) return 0;
+  return localFloodLevelMeters(
+    globalLevel,
+    activeScenario.flood.maxLevelMeters,
+    floodArrivalRatioAtBlock(blockX, blockZ)
+  );
+}
+
+function floodLevelAtPosition(x, z, globalLevel = floodWaterLevel) {
+  return floodLevelAtBlock(
+    Math.floor(blockXFromWorld(x)),
+    Math.floor(blockZFromWorld(z)),
+    globalLevel
+  );
+}
+
 function rebuildFloodSurfaceTiles() {
-  const cells = [];
+  rebuildFloodConnectivity();
+  const cellsByBand = Array.from({ length: FLOOD_ARRIVAL_BAND_COUNT }, () => []);
+  const arrivalByBand = Array.from(
+    { length: FLOOD_ARRIVAL_BAND_COUNT },
+    () => Number.POSITIVE_INFINITY
+  );
+  let cellCount = 0;
+  let protectedCellCount = 0;
   for (let z = 0; z < tilesDeep; z += 1) {
     for (let x = 0; x < tilesWide; x += 1) {
-      if (isFloodableTile(x, z)) cells.push([x, z]);
+      if (!isFloodableTile(x, z)) continue;
+      const arrivalRatio = floodArrivalRatioAtBlock(x, z);
+      if (arrivalRatio >= 1) {
+        protectedCellCount += 1;
+        continue;
+      }
+      const bandIndex = floodArrivalBandIndex(arrivalRatio, FLOOD_ARRIVAL_BAND_COUNT);
+      cellsByBand[bandIndex].push([x, z]);
+      arrivalByBand[bandIndex] = Math.min(arrivalByBand[bandIndex], arrivalRatio);
+      cellCount += 1;
     }
   }
-  if (floodSurfaceTiles) scene.remove(floodSurfaceTiles);
-  floodSurfaceTiles = new THREE.InstancedMesh(floodTileGeometry, floodTileMaterial, cells.length);
-  floodSurfaceTiles.name = 'TerrainFloodSurface';
-  cells.forEach(([x, z], index) => {
-    tileMatrix.makeTranslation(worldXFromBlock(x + 0.5), 0, worldZFromBlock(z + 0.5));
-    floodSurfaceTiles.setMatrixAt(index, tileMatrix);
+  floodSurfaceBands.forEach(({ mesh }) => scene.remove(mesh));
+  floodSurfaceBands = [];
+  cellsByBand.forEach((cells, bandIndex) => {
+    if (!cells.length) return;
+    const mesh = new THREE.InstancedMesh(floodTileGeometry, floodTileMaterial, cells.length);
+    mesh.name = `TerrainFloodSurfaceBand${bandIndex}`;
+    cells.forEach(([x, z], index) => {
+      tileMatrix.makeTranslation(worldXFromBlock(x + 0.5), 0, worldZFromBlock(z + 0.5));
+      mesh.setMatrixAt(index, tileMatrix);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.renderOrder = 6;
+    scene.add(mesh);
+    floodSurfaceBands.push({
+      mesh,
+      arrivalRatio: arrivalByBand[bandIndex]
+    });
   });
-  floodSurfaceTiles.instanceMatrix.needsUpdate = true;
-  floodSurfaceTiles.position.y = floodWaterLevel - 0.012;
-  floodSurfaceTiles.visible = floodWaterLevel > 0.02;
-  floodSurfaceTiles.renderOrder = 6;
-  scene.add(floodSurfaceTiles);
-  canvas.dataset.floodSurfaceTileCount = String(cells.length);
+  updateFloodSurfaceBands();
+  canvas.dataset.floodSurfaceTileCount = String(cellCount);
+  canvas.dataset.floodSurfaceBandCount = String(floodSurfaceBands.length);
+  canvas.dataset.floodProtectedTileCount = String(protectedCellCount);
+}
+
+function updateFloodSurfaceBands() {
+  const maxLevel = activeScenario.flood.maxLevelMeters;
+  let visibleBandCount = 0;
+  floodSurfaceBands.forEach(({ mesh, arrivalRatio }) => {
+    const localLevel = localFloodLevelMeters(floodWaterLevel, maxLevel, arrivalRatio);
+    mesh.position.y = localLevel - 0.012;
+    mesh.visible = localLevel > 0.02;
+    if (mesh.visible) visibleBandCount += 1;
+  });
+  canvas.dataset.floodVisibleBandCount = String(visibleBandCount);
 }
 
 rebuildFloodSurfaceTiles();
 
 function isPositionFlooded(x, z) {
   return isFloodablePosition(x, z)
-    && floodWaterLevel > 0
-    && floodWaterLevel > getWalkableHeight(x, z) + 0.02;
+    && floodLevelAtPosition(x, z) > getWalkableHeight(x, z) + 0.02;
 }
 
 function updateFloodLevel(dt) {
@@ -4267,14 +4388,17 @@ function updateFloodLevel(dt) {
   if (floodRisingEnabled && floodWaterLevel < maxLevel) {
     floodWaterLevel = Math.min(maxLevel, floodWaterLevel + riseMetersPerSecond * dt);
   }
-  floodSurfaceTiles.position.y = floodWaterLevel - 0.012;
-  floodSurfaceTiles.visible = floodWaterLevel > 0.02;
+  updateFloodSurfaceBands();
+  canvas.dataset.playerLocalFloodLevel = floodLevelAtPosition(
+    player.position.x,
+    player.position.z
+  ).toFixed(3);
 
   floodValue.textContent = floodWaterLevel.toFixed(1);
   floodGaugeFill.style.height = `${Math.min(100, (floodWaterLevel / maxLevel) * 100).toFixed(1)}%`;
   floodForecast.textContent = !floodRisingEnabled
     ? '上昇を一時停止中'
-    : floodWaterLevel >= maxLevel ? '最高水位に到達' : '上昇中';
+    : floodWaterLevel >= maxLevel ? '浸水可能域が最高水位に到達' : '川からつながる低地へ拡大中';
   updateWaterObservationPoint();
 }
 
@@ -4423,12 +4547,14 @@ let respawnCount = 0;
 
 function playerFloodDepth() {
   if (!isFloodablePosition(player.position.x, player.position.z)) return 0;
-  return floodWaterLevel - getWalkableHeight(player.position.x, player.position.z);
+  return floodLevelAtPosition(player.position.x, player.position.z)
+    - getWalkableHeight(player.position.x, player.position.z);
 }
 
 function isPlayerDrowning() {
   return isFloodablePosition(player.position.x, player.position.z)
-    && floodWaterLevel > player.position.y + PLAYER_NOSE_HEIGHT_METERS;
+    && floodLevelAtPosition(player.position.x, player.position.z)
+      > player.position.y + PLAYER_NOSE_HEIGHT_METERS;
 }
 
 function setDangerBanner(visible, text) {
@@ -4441,7 +4567,7 @@ function respawnAtStart() {
   const startZ = worldZFromBlock(mapConfig.playerStartBlock.z);
   const startGround = getWalkableHeight(startX, startZ);
   const startIsSafe = !isFloodablePosition(startX, startZ)
-    || floodWaterLevel - startGround <= FLOOD_WARNING_DEPTH_METERS;
+    || floodLevelAtPosition(startX, startZ) - startGround <= FLOOD_WARNING_DEPTH_METERS;
   const target = startIsSafe ? { x: startX, z: startZ } : shelterApproachPoint();
   player.position.set(target.x, getWalkableHeight(target.x, target.z), target.z);
   verticalVelocity = 0;
@@ -7224,30 +7350,34 @@ function animate(now) {
 
 // --- Hazard map --------------------------------------------------------
 // A coarse (one cell = one grid square, same 15-block cells as the visible
-// minimap grid lines) flood-risk overlay, colored from the same terrain
-// height data the actual flood mechanic uses. It is rebuilt after height
-// editing so the hazard map stays consistent with the playable terrain.
-const FLOOD_SEVERE_HEIGHT_BLOCKS = 5; // roughly the drowning-risk depth
+// minimap grid lines) flood-risk overlay, colored from the connected flood
+// calculation used by gameplay. Raised but isolated land therefore remains
+// safe until water can actually reach it through a low opening or over a ridge.
+const FLOOD_NOTICE_DEPTH_METERS = 0.15;
+const FLOOD_SEVERE_DEPTH_METERS = 1.0;
 function buildHazardOverlay() {
   const cell = mapConfig.cellBlocks;
-  const floodSafeHeightBlocks = activeScenario.flood.maxLevelMeters / tileSize;
   const rects = [];
   for (let z = 0; z < tilesDeep; z += cell) {
     for (let x = 0; x < tilesWide; x += cell) {
       const w = Math.min(cell, tilesWide - x);
       const h = Math.min(cell, tilesDeep - z);
-      let minimumFloodableHeight = Number.POSITIVE_INFINITY;
+      let maximumFloodDepth = 0;
       for (let sampleZ = z; sampleZ < z + h; sampleZ += 1) {
         for (let sampleX = x; sampleX < x + w; sampleX += 1) {
           if (!isFloodableTile(sampleX, sampleZ)) continue;
-          minimumFloodableHeight = Math.min(minimumFloodableHeight, getTerrainHeightBlocks(sampleX, sampleZ));
+          const maximumLocalLevel = floodLevelAtBlock(
+            sampleX,
+            sampleZ,
+            activeScenario.flood.maxLevelMeters
+          );
+          const groundLevel = getTerrainHeightBlocks(sampleX, sampleZ) * tileSize;
+          maximumFloodDepth = Math.max(maximumFloodDepth, maximumLocalLevel - groundLevel);
         }
       }
-      const color = !Number.isFinite(minimumFloodableHeight)
-        ? '#3ecf6b'
-        : minimumFloodableHeight < FLOOD_SEVERE_HEIGHT_BLOCKS
-          ? '#c0392b'
-          : minimumFloodableHeight < floodSafeHeightBlocks ? '#e0a63a' : '#3ecf6b';
+      const color = maximumFloodDepth > FLOOD_SEVERE_DEPTH_METERS
+        ? '#c0392b'
+        : maximumFloodDepth > FLOOD_NOTICE_DEPTH_METERS ? '#e0a63a' : '#3ecf6b';
       rects.push(`<rect x="${x}" y="${z}" width="${w}" height="${h}" fill="${color}" opacity=".82"/>`);
     }
   }
