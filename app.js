@@ -26,6 +26,10 @@ import {
   setAudioEnabled,
   setRainAudioLevel
 } from './modules/audio.js?v=20260901-25';
+import {
+  EVACUATION_SHELTER_CONFIG,
+  shelterHighGroundHeightBlocks
+} from './modules/shelter-terrain.js?v=20260902-1';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -373,6 +377,11 @@ const mapConfig = Object.freeze({
     flatDevelopment: true
   },
   structures: {
+    // This is the canonical shelter position that was previously represented
+    // by a base position plus the baked-in (-87, -32) editor offset. Keeping
+    // the final position here makes development, production and new browsers
+    // load the shelter in exactly the same place.
+    evacuationShelter: EVACUATION_SHELTER_CONFIG,
     startHouse: {
       centerBlock: {
         x: 52.5 + 7 * 15 + CITY_LAYOUT_SHIFT_BLOCKS,
@@ -989,9 +998,15 @@ function getTerrainHeightBlocks(blockX, blockZ) {
   return THREE.MathUtils.clamp(base + delta, 0, 40);
 }
 
+function getShelterHighGroundHeightBlocks(blockX, blockZ) {
+  return shelterHighGroundHeightBlocks(blockX, blockZ, mapConfig.structures.evacuationShelter);
+}
+
 function getBaseTerrainHeightBlocks(blockX, blockZ) {
   if (blockX < 0 || blockX >= tilesWide || blockZ < 0 || blockZ >= tilesDeep) return 0;
   if (isRiverBlock(blockX, blockZ)) return 0;
+  const shelterHighGround = getShelterHighGroundHeightBlocks(blockX, blockZ);
+  if (shelterHighGround > 0) return shelterHighGround;
   if (mapConfig.terrain.flatDevelopment) return 0;
   // The 7-cell western expansion just extrudes whatever height the old west
   // edge (now at WEST_EXPANSION_BLOCKS) had for this row, so existing terrain
@@ -1567,9 +1582,7 @@ for (const [key, value] of loadFloatingBlocks()) {
 // defaults ship the same way as the tile/height overrides above; live
 // localStorage edits from this browser layer on top and are applied once
 // all structures exist (see loadStructureOffsets below buildEvacuationShelter).
-const DEFAULT_STRUCTURE_OFFSETS = [
-  ['EvacuationShelter', { x: -87, z: -32 }]
-];
+const DEFAULT_STRUCTURE_OFFSETS = [];
 
 function baseTileType(x, z) {
   if (isRiverBlock(x, z)) return 'river';
@@ -2315,6 +2328,7 @@ function registerMovableStructure(entry) {
   movableStructures.push({
     offsetX: 0,
     offsetZ: 0,
+    locked: false,
     collider: null,
     stepZone: null,
     ...entry,
@@ -3389,17 +3403,13 @@ function createShelterFence(config, worldX, worldZ, groundY, parent) {
 }
 
 function buildEvacuationShelter() {
+  const shelter = mapConfig.structures.evacuationShelter;
   const config = {
     name: 'EvacuationShelter',
-    // Grid-cell convention (cellBlocks = 15, same as targetCellFromNorth):
-    // cell N's center is at (N - 0.5) * cellBlocks. "左から2マス目、上から5マス目"
-    // relative to the map as it was before the 7-cell west expansion, so
-    // +WEST_EXPANSION_BLOCKS keeps it physically in the same spot.
-    centerBlock: { x: 1.5 * mapConfig.cellBlocks + WEST_EXPANSION_BLOCKS + CITY_LAYOUT_SHIFT_BLOCKS, z: 4.5 * mapConfig.cellBlocks },
-    // Width x3 (11 -> 33 blocks across, half 5 -> 16), height x1.5 (7 -> 11).
-    halfBlocks: 16,
-    wallHeightBlocks: 11,
-    roofHeightBlocks: 2,
+    centerBlock: { ...shelter.centerBlock },
+    halfBlocks: shelter.halfBlocks,
+    wallHeightBlocks: shelter.wallHeightBlocks,
+    roofHeightBlocks: shelter.roofHeightBlocks,
     colors: { foundation: 0x8b8880, wall: 0xdcc79a, trim: 0x6b4a30, glass: 0x6f97a8, door: 0x5b3a2d, roof: 0x2f7d4f }
   };
 
@@ -3487,7 +3497,7 @@ function buildEvacuationShelter() {
     maxX: origin.x + 2.5 * tileSize,
     minZ: origin.z + (half + 0.5) * tileSize,
     maxZ: origin.z + (half + 2.5) * tileSize,
-    height: tileSize
+    height: (groundHeightBlocks + 1) * tileSize
   };
   houseColliders.push(collider);
   walkableStepZones.push(stepZone);
@@ -3497,6 +3507,7 @@ function buildEvacuationShelter() {
 
   registerMovableStructure({
     label: '避難所',
+    locked: true,
     group,
     centerBlock: { ...config.centerBlock },
     collider,
@@ -3514,10 +3525,15 @@ buildEvacuationShelter();
   const offsets = new Map(DEFAULT_STRUCTURE_OFFSETS);
   for (const [name, offset] of loadStructureOffsetsData()) offsets.set(name, offset);
   for (const entry of movableStructures) {
+    if (entry.locked) continue;
     const offset = offsets.get(entry.group.name);
     if (offset) setStructureOffset(entry, offset.x, offset.z);
   }
 })();
+canvas.dataset.shelterCenterBlock = `${mapConfig.structures.evacuationShelter.centerBlock.x},${mapConfig.structures.evacuationShelter.centerBlock.z}`;
+canvas.dataset.shelterHighGroundMeters = (
+  mapConfig.structures.evacuationShelter.highGround.heightBlocks * tileSize
+).toFixed(4);
 // -------------------------------------------------------------------------
 
 // --- Mission: reach the shelter --------------------------------------------
@@ -3738,7 +3754,19 @@ function routeNodeWorld(gridX, gridZ) {
 
 function routeNodeWalkable(gridX, gridZ) {
   const node = routeNodeWorld(gridX, gridZ);
-  return canMoveToPosition(node.x, node.z);
+  return !isBlockedPosition(node.x, node.z);
+}
+
+function routeEdgeWalkable(from, to) {
+  if (!routeNodeWalkable(from.gridX, from.gridZ) || !routeNodeWalkable(to.gridX, to.gridZ)) return false;
+  const fromWorld = routeNodeWorld(from.gridX, from.gridZ);
+  const toWorld = routeNodeWorld(to.gridX, to.gridZ);
+  const heightDifference = Math.abs(
+    getWalkableHeight(toWorld.x, toWorld.z) - getWalkableHeight(fromWorld.x, fromWorld.z)
+  );
+  // Route nodes are three blocks apart. The shelter ramp rises by one block
+  // over that distance, while the highland's retaining walls are much taller.
+  return heightDifference <= tileSize * 1.18;
 }
 
 function closestWalkableRouteNode(worldX, worldZ) {
@@ -3832,8 +3860,12 @@ function findSafeRoute(startWorld, goalWorld) {
     for (const [dx, dz] of directions) {
       const next = { gridX: current.gridX + dx, gridZ: current.gridZ + dz };
       if (next.gridX < 0 || next.gridZ < 0 || next.gridX * SAFE_ROUTE_GRID_BLOCKS >= tilesWide || next.gridZ * SAFE_ROUTE_GRID_BLOCKS >= tilesDeep) continue;
-      if (!routeNodeWalkable(next.gridX, next.gridZ)) continue;
-      if (dx && dz && (!routeNodeWalkable(current.gridX + dx, current.gridZ) || !routeNodeWalkable(current.gridX, current.gridZ + dz))) continue;
+      if (!routeEdgeWalkable(current, next)) continue;
+      if (dx && dz) {
+        const horizontal = { gridX: current.gridX + dx, gridZ: current.gridZ };
+        const vertical = { gridX: current.gridX, gridZ: current.gridZ + dz };
+        if (!routeEdgeWalkable(current, horizontal) || !routeEdgeWalkable(current, vertical)) continue;
+      }
 
       const nextKey = keyOf(next.gridX, next.gridZ);
       const nextCost = costSoFar.get(currentKey) + routeNodeCost(current, next);
@@ -4407,11 +4439,16 @@ function setDangerBanner(visible, text) {
 function respawnAtStart() {
   const startX = worldXFromBlock(mapConfig.playerStartBlock.x);
   const startZ = worldZFromBlock(mapConfig.playerStartBlock.z);
-  player.position.set(startX, getWalkableHeight(startX, startZ), startZ);
+  const startGround = getWalkableHeight(startX, startZ);
+  const startIsSafe = !isFloodablePosition(startX, startZ)
+    || floodWaterLevel - startGround <= FLOOD_WARNING_DEPTH_METERS;
+  const target = startIsSafe ? { x: startX, z: startZ } : shelterApproachPoint();
+  player.position.set(target.x, getWalkableHeight(target.x, target.z), target.z);
   verticalVelocity = 0;
   playerHealth = PLAYER_MAX_HEALTH;
   respawnCount += 1;
   setDangerBanner(false);
+  if (!startIsSafe) showNpcToast('スタート地点が冠水したため、高台の避難所前へ移動しました。', 4200);
 }
 
 function updateFloodDanger(dt) {
@@ -6426,6 +6463,7 @@ function structureAtPointer(clientX, clientY) {
   paintRaycaster.setFromCamera(paintPointer, camera);
   let best = null;
   for (const entry of movableStructures) {
+    if (entry.locked) continue;
     const hits = paintRaycaster.intersectObject(entry.group, true);
     if (hits.length && (!best || hits[0].distance < best.distance)) {
       best = { entry, distance: hits[0].distance };
@@ -6436,7 +6474,7 @@ function structureAtPointer(clientX, clientY) {
 
 function saveStructureOffsets() {
   const moved = movableStructures
-    .filter((s) => s.offsetX !== 0 || s.offsetZ !== 0)
+    .filter((s) => !s.locked && (s.offsetX !== 0 || s.offsetZ !== 0))
     .map((s) => [s.group.name, { x: s.offsetX, z: s.offsetZ }]);
   saveStructureOffsetsData(moved);
 }
@@ -6703,7 +6741,7 @@ updateEditToolsVisibility();
 
 exportPaintButton.addEventListener('click', () => {
   const structureOffsets = movableStructures
-    .filter((s) => s.offsetX !== 0 || s.offsetZ !== 0)
+    .filter((s) => !s.locked && (s.offsetX !== 0 || s.offsetZ !== 0))
     .map((s) => [s.group.name, { x: s.offsetX, z: s.offsetZ }]);
   const blob = new Blob(
     [JSON.stringify({
@@ -6724,7 +6762,7 @@ exportPaintButton.addEventListener('click', () => {
 });
 
 clearPaintButton.addEventListener('click', () => {
-  const movedStructures = movableStructures.filter((s) => s.offsetX !== 0 || s.offsetZ !== 0);
+  const movedStructures = movableStructures.filter((s) => !s.locked && (s.offsetX !== 0 || s.offsetZ !== 0));
   if (tilePaintOverrides.size === 0 && heightPaintOverrides.size === 0 && floatingBlocks.size === 0 && movedStructures.length === 0) return;
   // confirm() blocks the JS thread; a movement key held down when it opens
   // can miss its keyup entirely, so release everything before showing it
