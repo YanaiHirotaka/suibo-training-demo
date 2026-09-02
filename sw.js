@@ -1,9 +1,9 @@
-const CACHE_NAME = 'suibo-training-v29';
+const CACHE_NAME = 'suibo-training-v35';
 const APP_ASSETS = [
   './',
   './index.html',
   './styles.css?v=20260901-21',
-  './app.js?v=20260902-33',
+  './app.js?v=20260902-39',
   './modules/time.js?v=20260901-22',
   './modules/storage.js?v=20260901-24',
   './modules/editor-storage.js?v=20260901-29',

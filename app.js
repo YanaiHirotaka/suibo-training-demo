@@ -4164,9 +4164,10 @@ function updateMissionGuidance() {
 // --------------------------------------------------------------------------
 
 // --- Rising flood water -----------------------------------------------------
-// Floodwater is rendered only over road-like lowland cells. This keeps the
-// flood visually concentrated along evacuation streets while bridges,
-// stairs, and raised terrain naturally remain above the water surface.
+// Every outdoor land tile can flood. The actual water depth is still decided
+// by comparing the rising water level with each tile's walkable height, so
+// raised terrain and the bridge remain safe while roads, paving, and grass at
+// the same low elevation are inundated consistently.
 const FLOOD_SPEED_MULTIPLIER = 0.55;
 let floodWaterLevel = 0;
 // Toggled from the edit-mode "水位上昇" checkbox. Pauses/resumes the rise in
@@ -4188,7 +4189,9 @@ function isFloodableTile(blockX, blockZ) {
   if (blockX < 0 || blockX >= tilesWide || blockZ < 0 || blockZ >= tilesDeep) return false;
   if (isInsideBridgeDeckBlocks(blockX, blockZ)) return false;
   const type = tileTypeAt(blockX, blockZ);
-  return type === 'road' || type === 'paving';
+  // The river already has its own animated water surface. All other terrain
+  // materials participate in the flood simulation, including grass.
+  return type !== 'river';
 }
 
 function isFloodablePosition(x, z) {
@@ -4204,7 +4207,7 @@ function rebuildFloodSurfaceTiles() {
   }
   if (floodSurfaceTiles) scene.remove(floodSurfaceTiles);
   floodSurfaceTiles = new THREE.InstancedMesh(floodTileGeometry, floodTileMaterial, cells.length);
-  floodSurfaceTiles.name = 'LocalizedFloodSurface';
+  floodSurfaceTiles.name = 'TerrainFloodSurface';
   cells.forEach(([x, z], index) => {
     tileMatrix.makeTranslation(worldXFromBlock(x + 0.5), 0, worldZFromBlock(z + 0.5));
     floodSurfaceTiles.setMatrixAt(index, tileMatrix);
