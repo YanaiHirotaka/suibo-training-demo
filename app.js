@@ -2887,6 +2887,16 @@ function createUrbanStreetscape() {
 
   makeInstances('StreetTreeTrunks', new THREE.BoxGeometry(0.28, 1.15, 0.28), trunkMaterial, treeSites, 0.575);
   makeInstances('StreetTreeCrowns', new THREE.BoxGeometry(1.15, 1.05, 1.15), leafMaterial, treeSites, 1.55);
+  // Layer smaller cubes around the main crown. The silhouette stays in the
+  // voxel style, but no longer reads as one plain box from the TPS camera.
+  const treeCrownClusterSites = treeSites.flatMap(({ blockX, blockZ }) => ([
+    { blockX: blockX - 0.72, blockZ },
+    { blockX: blockX + 0.72, blockZ },
+    { blockX, blockZ: blockZ - 0.72 },
+    { blockX, blockZ: blockZ + 0.72 }
+  ]));
+  makeInstances('StreetTreeCrownClusters', new THREE.BoxGeometry(0.72, 0.72, 0.72), leafMaterial, treeCrownClusterSites, 1.52);
+  makeInstances('StreetTreeCrownTops', new THREE.BoxGeometry(0.76, 0.62, 0.76), leafMaterial, treeSites, 2.18);
   makeInstances('StreetLampPoles', new THREE.CylinderGeometry(0.055, 0.075, 2.45, 8), lampMaterial, lampSites, 1.225);
   makeInstances('StreetLampHeads', new THREE.BoxGeometry(0.36, 0.18, 0.36), lampGlowMaterial, lampSites, 2.42);
 
@@ -3011,10 +3021,48 @@ function createUrbanStreetscape() {
     group.add(signGroup);
   }
 
+  function addRouteBanners() {
+    const bannerTexture = createSignTexture((ctx, widthPx, heightPx) => {
+      ctx.fillStyle = '#12633d';
+      ctx.fillRect(0, 0, widthPx, heightPx);
+      ctx.strokeStyle = '#e9d85d';
+      ctx.lineWidth = 8;
+      ctx.strokeRect(5, 5, widthPx - 10, heightPx - 10);
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = '900 34px "Yu Gothic UI", "Meiryo", sans-serif';
+      ctx.fillText('高台', widthPx / 2, heightPx * 0.3);
+      ctx.font = '900 58px sans-serif';
+      ctx.fillText('↑', widthPx / 2, heightPx * 0.68);
+    }, 192, 320);
+    const bannerMaterial = new THREE.MeshStandardMaterial({ map: bannerTexture, roughness: 0.56 });
+    const bannerSideMaterial = new THREE.MeshStandardMaterial({ color: 0x18382f, roughness: 0.7 });
+    const sites = [160, 176];
+    for (const blockZ of sites) {
+      for (const side of [-1, 1]) {
+        const blockX = side < 0 ? road.left - 1.1 : road.right + 1.1;
+        const banner = new THREE.Mesh(
+          new THREE.BoxGeometry(0.42, 0.72, 0.045),
+          [bannerSideMaterial, bannerSideMaterial, bannerSideMaterial, bannerSideMaterial, bannerMaterial, bannerMaterial]
+        );
+        banner.name = 'EvacuationRouteBanner';
+        banner.position.set(
+          worldXFromBlock(blockX),
+          sidewalkY(blockX, blockZ) + 1.82,
+          worldZFromBlock(blockZ)
+        );
+        banner.castShadow = true;
+        group.add(banner);
+      }
+    }
+  }
+
   addVendingMachine(road.left - sidewalkWidthBlocks + 0.65, 181, vendingRedMaterial);
   addVendingMachine(road.right + sidewalkWidthBlocks - 0.65, 158, vendingBlueMaterial);
   addEvacuationRouteSign(road.left - sidewalkWidthBlocks + 0.7, 173, 0);
   addEvacuationRouteSign(road.right + sidewalkWidthBlocks - 0.7, 155, Math.PI);
+  addRouteBanners();
 
   const bollardSites = [
     { blockX: road.left + 0.7, blockZ: crosswalkZ - 1.25 },
