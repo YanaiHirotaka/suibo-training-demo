@@ -40,6 +40,7 @@ import {
 } from './modules/flood-spread.js?v=20260902-3';
 import { cityReliefHeightBlocks } from './modules/terrain-elevation.js?v=20260902-1';
 import { weatherVisualState } from './modules/atmosphere.js?v=20260904-1';
+import { escortFormationTarget, roleMotionProfile } from './modules/character-motion.js?v=20260904-1';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -4254,6 +4255,27 @@ function allRescuedPeopleAtShelter() {
   return missionHelpNpcDone && rescuedPeopleOutsideShelter() === 0;
 }
 
+function poseNpcShelterCelebration() {
+  npcHelpers
+    .filter((npc) => npc.rescued)
+    .forEach((npc, index) => {
+      npc.marker.sprite.visible = false;
+      const parts = npc.group.userData;
+      const alternate = index % 2 === 0;
+      parts.leftArm.rotation.x = -0.25;
+      parts.rightArm.rotation.x = 0.25;
+      parts.leftArm.rotation.z = alternate ? -2.25 : -1.35;
+      parts.rightArm.rotation.z = alternate ? 1.35 : 2.25;
+      parts.leftLeg.rotation.x = 0;
+      parts.rightLeg.rotation.x = 0;
+      parts.head.rotation.y = alternate ? -0.12 : 0.12;
+      parts.visual.position.y = 0.045 + index * 0.008;
+      const cameraDx = camera.position.x - npc.group.position.x;
+      const cameraDz = camera.position.z - npc.group.position.z;
+      npc.group.rotation.y = Math.atan2(-cameraDx, -cameraDz);
+    });
+}
+
 function completeMissionReachShelter() {
   if (
     missionReachShelterDone
@@ -4267,6 +4289,7 @@ function completeMissionReachShelter() {
   guidanceArrow.textContent = '✓';
   guidanceBanner.querySelector('strong').textContent = '全員で避難所に到着しました！';
   guidanceDistance.textContent = '全員の安全を確認';
+  poseNpcShelterCelebration();
   updateMissionProgress();
   checkTrainingComplete();
 }
@@ -4940,28 +4963,59 @@ function makePlayer(type = 'rain') {
   const visual = new THREE.Group();
   root.add(visual);
   const isRescue = type === 'rescue';
+  const isElderly = type === 'elderly';
+  const isChild = type === 'child';
+  const isResident = type === 'resident';
+
+  const palettes = {
+    rain: {
+      primary: 0xe7ad08, primaryLight: 0xffca19, primarySoft: 0xf4bc10,
+      primaryDark: 0xb77b05, primaryShadow: 0x9f6904,
+      legs: [0x24405a, 0x30506e, 0x172a3d, 0x2b4c60],
+      bag: [0x232b31, 0x3c4850, 0x14191d], boot: [0x262b30, 0x3f4b51]
+    },
+    rescue: {
+      primary: 0xe8641f, primaryLight: 0xff8a3d, primarySoft: 0xff9c52,
+      primaryDark: 0xb84c14, primaryShadow: 0x9c3f10,
+      legs: [0xe8641f, 0xff8a3d, 0xb84c14, 0x7a3a10],
+      bag: [0x2e3236, 0x454b50, 0x1a1d20], boot: [0x1c1e22, 0x2e3236]
+    },
+    elderly: {
+      primary: 0x76519b, primaryLight: 0x9a70bb, primarySoft: 0x8660a8,
+      primaryDark: 0x54386f, primaryShadow: 0x412b56,
+      legs: [0x3d3550, 0x54496b, 0x292334, 0x201a2a],
+      bag: [0x4f3c2e, 0x705744, 0x33271e], boot: [0x2b2525, 0x453b39]
+    },
+    child: {
+      primary: 0xe9ad0b, primaryLight: 0xffce28, primarySoft: 0xf4bc16,
+      primaryDark: 0xb87c08, primaryShadow: 0x936207,
+      legs: [0x315a87, 0x4776a5, 0x203e61, 0x182f49],
+      bag: [0xb72f2f, 0xe24d43, 0x7e1e25], boot: [0x54362c, 0x765044]
+    },
+    resident: {
+      primary: 0x27805a, primaryLight: 0x3fa77a, primarySoft: 0x32956b,
+      primaryDark: 0x185f40, primaryShadow: 0x124b33,
+      legs: [0x29485d, 0x3a627a, 0x1b3140, 0x142633],
+      bag: [0x2c3940, 0x45565e, 0x1a252b], boot: [0x25292b, 0x3c4447]
+    }
+  };
+  const palette = palettes[type] || palettes.rain;
 
   // Shared proportions (both characters use the same skeleton), palette swaps
   // per type. 'rain': yellow hooded raincoat. 'rescue': orange jumpsuit,
   // white hard-hat style helmet, black gloves/boots, reflective stripes.
-  const primary = isRescue ? 0xe8641f : 0xe7ad08;
-  const primaryLight = isRescue ? 0xff8a3d : 0xffca19;
-  const primarySoft = isRescue ? 0xff9c52 : 0xf4bc10;
-  const primaryDark = isRescue ? 0xb84c14 : 0xb77b05;
-  const primaryShadow = isRescue ? 0x9c3f10 : 0x9f6904;
-  const legPrimary = isRescue ? primary : 0x24405a;
-  const legPrimaryLight = isRescue ? primaryLight : 0x30506e;
-  const legPrimaryDark = isRescue ? primaryDark : 0x172a3d;
-  const legPrimaryDarkest = isRescue ? 0x7a3a10 : 0x2b4c60;
+  const primary = palette.primary;
+  const primaryLight = palette.primaryLight;
+  const primarySoft = palette.primarySoft;
+  const primaryDark = palette.primaryDark;
+  const primaryShadow = palette.primaryShadow;
+  const [legPrimary, legPrimaryLight, legPrimaryDark, legPrimaryDarkest] = palette.legs;
   const skin = 0xf0b780;
   const skinShadow = 0xd99567;
   const hair = 0x4e3426;
   const hairLight = 0x6a4730;
-  const bagDark = isRescue ? 0x2e3236 : 0x232b31;
-  const bagMid = isRescue ? 0x454b50 : 0x3c4850;
-  const bagDarker = isRescue ? 0x1a1d20 : 0x14191d;
-  const bootColor = isRescue ? 0x1c1e22 : 0x262b30;
-  const bootAccent = isRescue ? 0x2e3236 : 0x3f4b51;
+  const [bagDark, bagMid, bagDarker] = palette.bag;
+  const [bootColor, bootAccent] = palette.boot;
   const zipperColor = isRescue ? 0x4a4d50 : 0xffdf55;
   const zipperPullColor = isRescue ? 0x33363a : 0x6f571c;
   const handColor = isRescue ? 0x1c1e22 : skin;
@@ -5036,6 +5090,19 @@ function makePlayer(type = 'rain') {
   voxelBox(backpack, 'strapHighlightR', [0.014, 0.28, 0.014], [0.12, 0.03, -0.145], 0x455058);
   visual.add(backpack);
 
+  if (isChild) {
+    voxelBox(visual, 'childScarf', [0.30, 0.06, 0.05], [0, 0.91, -0.16], 0xd9423b);
+    voxelBox(visual, 'childScarfTail', [0.08, 0.20, 0.035], [0.10, 0.81, 0.18], 0xb5262d);
+  }
+  if (isResident) {
+    voxelBox(visual, 'residentSafetyStripe', [0.36, 0.045, 0.02], [0, 0.72, -0.16], 0xd9ead8);
+    voxelBox(visual, 'residentNamePatch', [0.10, 0.06, 0.02], [0.10, 0.82, -0.17], 0xf1f4ea);
+  }
+  if (isElderly) {
+    voxelBox(visual, 'elderlyShawl', [0.46, 0.10, 0.31], [0, 0.88, 0], 0x9b73b7);
+    voxelBox(visual, 'elderlyBrooch', [0.045, 0.045, 0.025], [0.10, 0.86, -0.17], 0xe8c85a);
+  }
+
   // Head: hood (rain) or helmet (rescue), both with a forward brim, plus a
   // shared layered face, kept at true size (not stretched with the body).
   const head = voxelBox(visual, 'head', [0.30, 0.27, 0.31], [0, headY, -0.005], skin);
@@ -5050,6 +5117,27 @@ function makePlayer(type = 'rain') {
     voxelBox(head, 'helmetBadge', [0.05, 0.05, 0.02], [0, 0.10, -0.185], badgeColor);
     voxelBox(head, 'helmetStrapL', [0.02, 0.10, 0.02], [-0.145, -0.06, -0.08], 0x2a2a2a);
     voxelBox(head, 'helmetStrapR', [0.02, 0.10, 0.02], [0.145, -0.06, -0.08], 0x2a2a2a);
+  } else if (isElderly) {
+    const grayHair = 0xc9c7c3;
+    const grayHairDark = 0x999793;
+    voxelBox(head, 'elderlyHairTop', [0.28, 0.08, 0.28], [0, 0.12, 0.02], grayHair);
+    voxelBox(head, 'elderlyHairBack', [0.27, 0.17, 0.08], [0, 0.035, 0.16], grayHairDark);
+    voxelBox(head, 'elderlyHairSideL', [0.055, 0.16, 0.25], [-0.15, 0.025, 0.01], grayHair);
+    voxelBox(head, 'elderlyHairSideR', [0.055, 0.16, 0.25], [0.15, 0.025, 0.01], grayHair);
+    voxelBox(head, 'glassesBridge', [0.045, 0.014, 0.018], [0, -0.018, -0.202], 0x3e4348);
+    [-0.073, 0.073].forEach((lensX, lensIndex) => {
+      voxelBox(head, `glassesTop${lensIndex}`, [0.09, 0.012, 0.018], [lensX, -0.048, -0.202], 0x3e4348);
+      voxelBox(head, `glassesBottom${lensIndex}`, [0.09, 0.012, 0.018], [lensX, 0.012, -0.202], 0x3e4348);
+      voxelBox(head, `glassesOuter${lensIndex}`, [0.012, 0.07, 0.018], [lensX + (lensIndex ? 0.04 : -0.04), -0.018, -0.202], 0x3e4348);
+      voxelBox(head, `glassesInner${lensIndex}`, [0.012, 0.07, 0.018], [lensX + (lensIndex ? -0.04 : 0.04), -0.018, -0.202], 0x3e4348);
+    });
+  } else if (isResident) {
+    const capBlue = 0x1769a8;
+    const capDark = 0x104d7c;
+    voxelBox(head, 'residentCap', [0.30, 0.09, 0.31], [0, 0.12, 0.02], capBlue);
+    voxelBox(head, 'residentCapTop', [0.20, 0.035, 0.22], [0, 0.18, 0.025], 0x2785c4);
+    voxelBox(head, 'residentCapBack', [0.28, 0.10, 0.08], [0, 0.07, 0.16], capDark);
+    voxelBox(head, 'residentCapBrim', [0.25, 0.03, 0.12], [0, 0.075, -0.205], capDark);
   } else {
     voxelBox(head, 'hoodTop', [0.30, 0.10, 0.32], [0, 0.11, 0.02], primaryLight);
     voxelBox(head, 'hoodTopRidge', [0.06, 0.03, 0.30], [0, 0.165, 0.02], primarySoft);
@@ -5127,7 +5215,24 @@ function makePlayer(type = 'rain') {
   const leftLeg = makeLeg(-1);
   const rightLeg = makeLeg(1);
 
-  root.userData = { visual, leftArm, rightArm, leftLeg, rightLeg };
+  if (isElderly) {
+    voxelBox(rightArm, 'walkingCaneShaft', [0.035, 0.66, 0.035], [0.055, -0.65, -0.02], 0x6c472b);
+    voxelBox(rightArm, 'walkingCaneHandle', [0.13, 0.04, 0.05], [0, -0.33, -0.02], 0x4e301e);
+    voxelBox(rightArm, 'walkingCaneTip', [0.05, 0.055, 0.05], [0.055, -0.99, -0.02], 0x252628);
+  }
+
+  const motionProfile = roleMotionProfile(type);
+  root.userData = {
+    visual,
+    head,
+    leftArm,
+    rightArm,
+    leftLeg,
+    rightLeg,
+    role: type,
+    gaitScale: motionProfile.gaitScale,
+    bobScale: motionProfile.bobScale
+  };
   root.rotation.y = 0;
   return root;
 }
@@ -5159,9 +5264,9 @@ function updateTrainingStatus(now) {
 
 // --- Rescue NPCs ("近くの人に声をかけて助け合おう") -------------------------
 const NPC_HELPER_CONFIGS = [
-  { id: 'elderly', label: '高齢者', type: 'rescue', blockX: 177 + CITY_LAYOUT_SHIFT_BLOCKS, blockZ: 155, scale: 0.9, followSpeed: 2.25 },
-  { id: 'child', label: '子ども', type: 'rain', blockX: 177 + CITY_LAYOUT_SHIFT_BLOCKS, blockZ: 142, scale: 0.72, followSpeed: 2.55 },
-  { id: 'resident', label: '近隣住民', type: 'rescue', blockX: 177 + CITY_LAYOUT_SHIFT_BLOCKS, blockZ: 129, scale: 0.96, followSpeed: 2.8 }
+  { id: 'elderly', label: '高齢者', type: 'elderly', blockX: 177 + CITY_LAYOUT_SHIFT_BLOCKS, blockZ: 155, scale: 0.9, followSpeed: 2.25 },
+  { id: 'child', label: '子ども', type: 'child', blockX: 177 + CITY_LAYOUT_SHIFT_BLOCKS, blockZ: 142, scale: 0.72, followSpeed: 2.55 },
+  { id: 'resident', label: '近隣住民', type: 'resident', blockX: 177 + CITY_LAYOUT_SHIFT_BLOCKS, blockZ: 129, scale: 0.96, followSpeed: 2.8 }
 ];
 
 function makeNpcStatusMarker(label) {
@@ -5217,9 +5322,19 @@ const npcHelpers = NPC_HELPER_CONFIGS.map((config, index) => {
     worldZFromBlock(config.blockZ)
   );
   group.rotation.y = Math.PI;
+  group.userData.isNpc = true;
   scene.add(group);
   const marker = makeNpcStatusMarker(config.label);
-  return { ...config, group, marker, rescued: false, rescuedOrder: -1, walkTime: index * 1.7 };
+  return {
+    ...config,
+    group,
+    marker,
+    rescued: false,
+    rescuedOrder: -1,
+    walkTime: index * 1.7,
+    idleTime: index * 1.3,
+    acknowledgeUntil: 0
+  };
 });
 
 minimapNpcMarkers.innerHTML = npcHelpers.map((npc) => `
@@ -5344,6 +5459,63 @@ function nearestUnrescuedNpc() {
     .sort((a, b) => npcDistanceFromPlayer(a) - npcDistanceFromPlayer(b))[0] || null;
 }
 
+function turnCharacterToward(group, targetX, targetZ, dt) {
+  const dx = targetX - group.position.x;
+  const dz = targetZ - group.position.z;
+  if (Math.hypot(dx, dz) < 0.001) return;
+  const targetAngle = Math.atan2(-dx, -dz);
+  const angleDelta = Math.atan2(
+    Math.sin(targetAngle - group.rotation.y),
+    Math.cos(targetAngle - group.rotation.y)
+  );
+  group.rotation.y += angleDelta * (1 - Math.exp(-12 * dt));
+}
+
+function animateNpcRig(npc, dt, moving, playerNearby, now) {
+  npc.idleTime += dt;
+  const parts = npc.group.userData;
+  const gaitScale = parts.gaitScale || 0.72;
+  const gait = moving ? Math.sin(npc.walkTime) * gaitScale : 0;
+  const acknowledging = now < npc.acknowledgeUntil;
+  const greeting = !npc.rescued && playerNearby;
+  let leftArmX = moving ? gait : Math.sin(npc.idleTime * 1.4) * 0.025;
+  let rightArmX = moving ? -gait : -Math.sin(npc.idleTime * 1.4) * 0.025;
+  let leftArmZ = 0;
+  let rightArmZ = 0;
+  const usesCane = parts.role === 'elderly';
+
+  if (acknowledging) {
+    leftArmX = usesCane ? Math.sin(npc.idleTime * 12) * 0.32 : -0.35;
+    rightArmX = usesCane ? 0 : Math.sin(npc.idleTime * 12) * 0.32;
+    leftArmZ = usesCane ? -2.15 : -1.15;
+    rightArmZ = usesCane ? 0 : 2.15;
+  } else if (greeting) {
+    if (usesCane) {
+      leftArmX = Math.sin(npc.idleTime * 8) * 0.28;
+      leftArmZ = -1.95;
+      rightArmX = 0;
+    } else {
+      rightArmX = Math.sin(npc.idleTime * 8) * 0.28;
+      rightArmZ = 1.95;
+    }
+  }
+
+  parts.leftArm.rotation.x = THREE.MathUtils.lerp(parts.leftArm.rotation.x, leftArmX, 12 * dt);
+  parts.rightArm.rotation.x = THREE.MathUtils.lerp(parts.rightArm.rotation.x, rightArmX, 12 * dt);
+  parts.leftArm.rotation.z = THREE.MathUtils.lerp(parts.leftArm.rotation.z, leftArmZ, 10 * dt);
+  parts.rightArm.rotation.z = THREE.MathUtils.lerp(parts.rightArm.rotation.z, rightArmZ, 10 * dt);
+  parts.leftLeg.rotation.x = THREE.MathUtils.lerp(parts.leftLeg.rotation.x, moving ? -gait : 0, 12 * dt);
+  parts.rightLeg.rotation.x = THREE.MathUtils.lerp(parts.rightLeg.rotation.x, moving ? gait : 0, 12 * dt);
+  parts.visual.position.y = moving
+    ? Math.abs(Math.sin(npc.walkTime * 2)) * (parts.bobScale || 0.024)
+    : Math.sin(npc.idleTime * 2) * 0.008;
+  parts.head.rotation.y = THREE.MathUtils.lerp(
+    parts.head.rotation.y,
+    moving ? 0 : Math.sin(npc.idleTime * 0.85) * 0.09,
+    4 * dt
+  );
+}
+
 function tryHelpNpc() {
   const npc = nearestUnrescuedNpc();
   if (!characterChosen || !npc || npcDistanceFromPlayer(npc) > NPC_HELP_RADIUS_METERS) return;
@@ -5353,6 +5525,7 @@ function tryHelpNpc() {
   }
   npc.rescued = true;
   npc.rescuedOrder = rescuedPeopleTotal() - 1;
+  npc.acknowledgeUntil = performance.now() + 1500;
   npc.marker.render(true);
   missionHelpNpcDone = rescuedPeopleTotal() === npcHelpers.length;
   missionHelpNpc.classList.toggle('is-done', missionHelpNpcDone);
@@ -5378,14 +5551,18 @@ function tryHelpNpc() {
 
 function updateNpcInteraction(dt) {
   if (!characterChosen) return;
+  const now = performance.now();
 
   npcHelpers.forEach((npc) => {
     npc.marker.sprite.position.set(
       npc.group.position.x,
-      npc.group.position.y + 1.35 * npc.scale,
+      npc.group.position.y + 1.35 * npc.scale + Math.sin(npc.idleTime * 2.4) * 0.035,
       npc.group.position.z
     );
     npc.marker.sprite.visible = !missionReachShelterDone && npcDistanceFromPlayer(npc) < 42;
+    if (!npc.rescued && npcDistanceFromPlayer(npc) < 5.5) {
+      turnCharacterToward(npc.group, player.position.x, player.position.z, dt);
+    }
   });
 
   const nearbyNpc = nearestUnrescuedNpc();
@@ -5402,9 +5579,16 @@ function updateNpcInteraction(dt) {
     .sort((a, b) => a.rescuedOrder - b.rescuedOrder);
   rescuedNpcHelpers.forEach((npc, index) => {
     const target = index === 0 ? player : rescuedNpcHelpers[index - 1].group;
-    const followDistance = NPC_FOLLOW_DISTANCE_METERS + index * 0.18;
-    const dx = target.position.x - npc.group.position.x;
-    const dz = target.position.z - npc.group.position.z;
+    const formation = escortFormationTarget({
+      x: target.position.x,
+      z: target.position.z,
+      rotation: target.rotation.y
+    }, index, NPC_FOLLOW_DISTANCE_METERS);
+    const followDistance = formation.followDistance;
+    const targetX = formation.x;
+    const targetZ = formation.z;
+    const dx = targetX - npc.group.position.x;
+    const dz = targetZ - npc.group.position.z;
     const distance = Math.hypot(dx, dz);
     const moving = distance > followDistance;
 
@@ -5422,24 +5606,16 @@ function updateNpcInteraction(dt) {
         if (!isInsideRoadClosure(nextX, npc.group.position.z)) npc.group.position.x = nextX;
         if (!isInsideRoadClosure(npc.group.position.x, nextZ)) npc.group.position.z = nextZ;
       }
-      const targetAngle = Math.atan2(-dx, -dz);
-      const angleDelta = Math.atan2(
-        Math.sin(targetAngle - npc.group.rotation.y),
-        Math.cos(targetAngle - npc.group.rotation.y)
-      );
-      npc.group.rotation.y += angleDelta * (1 - Math.exp(-14 * dt));
+      turnCharacterToward(npc.group, targetX, targetZ, dt);
       npc.walkTime += dt * 9;
     }
     npc.group.position.y = getWalkableHeight(npc.group.position.x, npc.group.position.z);
-
-    const swing = moving ? Math.sin(npc.walkTime) * 0.72 : 0;
-    const parts = npc.group.userData;
-    parts.leftArm.rotation.x = THREE.MathUtils.lerp(parts.leftArm.rotation.x, swing, 12 * dt);
-    parts.rightArm.rotation.x = THREE.MathUtils.lerp(parts.rightArm.rotation.x, -swing, 12 * dt);
-    parts.leftLeg.rotation.x = THREE.MathUtils.lerp(parts.leftLeg.rotation.x, -swing, 12 * dt);
-    parts.rightLeg.rotation.x = THREE.MathUtils.lerp(parts.rightLeg.rotation.x, swing, 12 * dt);
-    parts.visual.position.y = moving ? Math.abs(Math.sin(npc.walkTime * 2)) * 0.025 : 0;
+    animateNpcRig(npc, dt, moving, false, now);
   });
+
+  npcHelpers
+    .filter((npc) => !npc.rescued)
+    .forEach((npc) => animateNpcRig(npc, dt, false, npcDistanceFromPlayer(npc) < 5.5, now));
 }
 // --------------------------------------------------------------------------
 
