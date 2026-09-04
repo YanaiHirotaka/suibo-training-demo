@@ -39,6 +39,7 @@ import {
   localFloodLevelMeters
 } from './modules/flood-spread.js?v=20260902-3';
 import { cityReliefHeightBlocks } from './modules/terrain-elevation.js?v=20260902-1';
+import { weatherVisualState } from './modules/atmosphere.js?v=20260904-1';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -1693,6 +1694,12 @@ const riverTileMaterial = new THREE.MeshStandardMaterial({
   transparent: true,
   opacity: 0.94
 });
+const dryRoadTint = new THREE.Color(0xffffff);
+const wetRoadTint = new THREE.Color(0xc1d0d3);
+const dryPavingTint = new THREE.Color(0xffffff);
+const wetPavingTint = new THREE.Color(0xaebfc4);
+const calmFloodColor = new THREE.Color(0x218fc4);
+const stormFloodColor = new THREE.Color(0x176f9f);
 
 let grassTiles = null;
 let roadTiles = null;
@@ -1745,6 +1752,62 @@ function buildPaintableTiles() {
 }
 
 buildPaintableTiles();
+
+// Small reflective patches are restricted to the playable evacuation road.
+// They share one material and one instanced draw call, so the rain response is
+// visible without adding a post-processing pass on mobile devices.
+const wetRoadSheenMaterial = new THREE.MeshBasicMaterial({
+  color: 0x6f99a3,
+  transparent: true,
+  opacity: 0,
+  depthWrite: false
+});
+
+function createWetRoadSheen() {
+  const road = getRoadFromHouseBounds();
+  const sites = [];
+  for (let blockZ = 154; blockZ <= 191; blockZ += 5.1) {
+    const sequence = Math.round(blockZ * 10);
+    const laneOffset = 2.2 + ((sequence * 17) % 90) / 15;
+    sites.push({
+      blockX: Math.min(road.right - 1.4, road.left + laneOffset),
+      blockZ,
+      scaleX: 0.28 + ((sequence * 7) % 5) * 0.055,
+      scaleZ: 0.055 + ((sequence * 11) % 4) * 0.018,
+      rotation: ((sequence * 13) % 7 - 3) * 0.08
+    });
+  }
+
+  const geometry = new THREE.CircleGeometry(1, 10);
+  geometry.rotateX(-Math.PI / 2);
+  const mesh = new THREE.InstancedMesh(geometry, wetRoadSheenMaterial, sites.length);
+  mesh.name = 'EvacuationRoadWetSheen';
+  const matrix = new THREE.Matrix4();
+  const rotation = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  sites.forEach((site, index) => {
+    const worldX = worldXFromBlock(site.blockX);
+    const worldZ = worldZFromBlock(site.blockZ);
+    rotation.setFromAxisAngle(new THREE.Vector3(0, 1, 0), site.rotation);
+    scale.set(site.scaleX, 1, site.scaleZ);
+    matrix.compose(
+      new THREE.Vector3(
+        worldX,
+        getTerrainHeightBlocks(Math.floor(site.blockX), Math.floor(site.blockZ)) * tileSize + 0.075,
+        worldZ
+      ),
+      rotation,
+      scale
+    );
+    mesh.setMatrixAt(index, matrix);
+  });
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.renderOrder = 5;
+  field.add(mesh);
+  return mesh;
+}
+
+const wetRoadSheen = createWetRoadSheen();
 
 const riverGroundTiles = createGroundTiles(
   'RiverGroundBlocks',
@@ -1950,6 +2013,7 @@ function createRiverSurfaceGeometry(y = 0.151) {
 function createRiver() {
   const shimmerCells = [];
   const bankCells = [];
+  const foamCells = [];
 
   for (let z = 0; z < tilesDeep; z++) {
     const { left, right } = riverEdgesAtBlockZ(z);
@@ -1966,6 +2030,7 @@ function createRiver() {
     const rightBank = Math.min(tilesWide - 1, end + 1);
     bankCells.push([leftBank, z]);
     if (rightBank !== leftBank) bankCells.push([rightBank, z]);
+    foamCells.push([left + 0.12, z + 0.5], [right - 0.12, z + 0.5]);
   }
 
   const water = riverGroundTiles;
@@ -2035,6 +2100,23 @@ function createRiver() {
   flowHighlights.instanceMatrix.needsUpdate = true;
   scene.add(flowHighlights);
 
+  const foamMaterial = new THREE.MeshBasicMaterial({
+    color: 0xe7fbff,
+    transparent: true,
+    opacity: 0.3,
+    depthWrite: false
+  });
+  const foamGeometry = new THREE.BoxGeometry(tileSize * 0.12, 0.012, tileSize * 0.82);
+  const foam = new THREE.InstancedMesh(foamGeometry, foamMaterial, foamCells.length);
+  foam.name = 'RiverBankFoam';
+  foamCells.forEach(([blockX, blockZ], index) => {
+    tileMatrix.makeTranslation(worldXFromBlock(blockX), 0.184, worldZFromBlock(blockZ));
+    foam.setMatrixAt(index, tileMatrix);
+  });
+  foam.instanceMatrix.needsUpdate = true;
+  foam.renderOrder = 4;
+  scene.add(foam);
+
   const bankGeometry = new THREE.BoxGeometry(tileSize - 0.003, 0.11, tileSize - 0.003);
   const bankMaterial = new THREE.MeshLambertMaterial({ color: 0xc9b383 });
   const banks = new THREE.InstancedMesh(bankGeometry, bankMaterial, bankCells.length);
@@ -2053,7 +2135,7 @@ function createRiver() {
   banks.receiveShadow = true;
   scene.add(banks);
 
-  return { water, surface, reflection, shimmer, banks, flowHighlights, flowData };
+  return { water, surface, reflection, shimmer, foam, banks, flowHighlights, flowData };
 }
 
 const riverMeshes = createRiver();
@@ -4558,13 +4640,28 @@ function updateWeather(dt) {
   }
   rainGeometry.attributes.position.needsUpdate = true;
 
-  const stormAmount = weatherIntensity * 0.78;
+  const visual = weatherVisualState(weatherIntensity, floodProgress);
+  const stormAmount = visual.stormAmount;
   scene.background.lerpColors(clearSkyColor, stormSkyColor, stormAmount);
   scene.fog.color.lerpColors(clearFogColor, stormFogColor, stormAmount);
   scene.fog.near = THREE.MathUtils.lerp(58, 42, stormAmount);
   scene.fog.far = THREE.MathUtils.lerp(150, 105, stormAmount);
   sun.intensity = THREE.MathUtils.lerp(2.35, 1.3, stormAmount);
   skyLight.intensity = THREE.MathUtils.lerp(1.7, 1.15, stormAmount);
+  renderer.toneMappingExposure = visual.exposure;
+  roadTileMaterial.roughness = visual.roadRoughness;
+  roadTileMaterial.metalness = visual.roadMetalness;
+  roadTileMaterial.color.lerpColors(dryRoadTint, wetRoadTint, visual.wetness);
+  pavingTileMaterial.roughness = visual.pavingRoughness;
+  pavingTileMaterial.metalness = visual.pavingMetalness;
+  pavingTileMaterial.color.lerpColors(dryPavingTint, wetPavingTint, visual.wetness);
+  wetRoadSheenMaterial.opacity = visual.puddleOpacity;
+  wetRoadSheen.visible = visual.puddleOpacity > 0.01;
+  floodTileMaterial.opacity = visual.floodOpacity;
+  floodTileMaterial.color.lerpColors(calmFloodColor, stormFloodColor, stormAmount);
+  riverTileMaterial.roughness = visual.riverRoughness;
+  canvas.dataset.weatherIntensity = weatherIntensity.toFixed(3);
+  canvas.dataset.roadWetness = visual.wetness.toFixed(3);
   setRainAudioLevel(weatherIntensity * 0.22);
 }
 
@@ -7306,6 +7403,7 @@ function updateRiver(now) {
   riverMeshes.reflection.material.opacity = 0.38 + wave * 0.18;
   riverMeshes.shimmer.material.opacity = 0.22 + wave * 0.13;
   riverMeshes.flowHighlights.material.opacity = 0.28 + wave * 0.15;
+  riverMeshes.foam.material.opacity = 0.2 + wave * 0.16 + weatherIntensity * 0.06;
 
   riverSurfaceTexture.offset.y = -(now * 0.000055) % 1;
   riverSurfaceTexture.offset.x = Math.sin(now * 0.00022) * 0.024;

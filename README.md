@@ -18,6 +18,9 @@
 - 地面は grass / road / river のブロック種別ごとに生成し、道路・河川は緑ブロックの上に重ねず入れ替えて配置
 - 河川は水面ハイライトのみを動かす軽量な流れ表現
 - 河川の上に半透明の波模様・反射テクスチャを重ね、軽量に水面の質感を表現
+- 河岸に軽量な泡表現を追加し、流れに合わせて明滅
+- 降雨強度に応じて道路の粗さ・反射・色調と画面露出が変化
+- 避難ルート上にインスタンス描画の濡れた路面反射を配置
 - 河川の両岸にブロック状の柵を配置し、プレイヤーが河川へ侵入できないよう制御
 - 住宅地を横断する道路、河川沿い道路、横断歩道を追加
 - 歩道・欄干・橋脚を備え、実際に渡れる河川橋を追加
@@ -64,7 +67,5 @@ python -m http.server 4175 --bind 127.0.0.1
 ## テスト
 
 ```powershell
-node --test tests/shelter-terrain.test.mjs
-node --test tests/flood-spread.test.mjs
-node --test tests/terrain-elevation.test.mjs
+node --test tests/*.test.mjs
 ```
