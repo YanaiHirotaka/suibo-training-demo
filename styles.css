@@ -1,5 +1,19 @@
 * { box-sizing: border-box; }
 
+:root {
+  --hud-bg: rgba(7, 34, 56, 0.94);
+  --hud-bg-deep: rgba(5, 26, 43, 0.97);
+  --hud-header: linear-gradient(180deg, #16577e 0%, #0a3656 100%);
+  --hud-edge: rgba(188, 229, 244, 0.92);
+  --hud-edge-soft: rgba(188, 229, 244, 0.42);
+  --hud-copy: #dff5fc;
+  --hud-muted: #a9cfde;
+  --hud-green: #55e783;
+  --hud-yellow: #ffe36b;
+  --hud-blue: #56c9ff;
+  --hud-shadow: 0 12px 34px rgba(3, 24, 38, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
 html,
 body {
   width: 100%;
@@ -64,13 +78,13 @@ body {
   top: 18px;
   right: 18px;
   z-index: 4;
-  width: 270px;
+  width: 280px;
   overflow: hidden;
   color: white;
-  background: rgba(8, 38, 62, 0.94);
-  border: 2px solid rgba(183, 220, 236, 0.9);
-  border-radius: 14px;
-  box-shadow: 0 12px 34px rgba(7, 33, 48, 0.35);
+  background: var(--hud-bg);
+  border: 2px solid var(--hud-edge);
+  border-radius: 16px;
+  box-shadow: var(--hud-shadow);
   backdrop-filter: blur(8px);
 }
 
@@ -80,8 +94,9 @@ body {
   justify-content: space-between;
   gap: 8px;
   padding: 9px 14px;
-  background: linear-gradient(180deg, #164c70, #0c3858);
+  background: var(--hud-header);
   border-bottom: 1px solid rgba(255,255,255,.25);
+  box-shadow: inset 0 -2px 0 rgba(83, 245, 125, 0.52);
   font-size: 16px;
   font-weight: 900;
   letter-spacing: .04em;
@@ -166,11 +181,13 @@ body {
 
 .minimap-map {
   display: block;
-  width: calc(100% - 12px);
+  width: calc(100% - 16px);
   height: 230px;
-  margin: 6px;
+  margin: 8px;
   background: #94b979;
-  border-radius: 7px;
+  border: 2px solid rgba(224, 247, 255, 0.68);
+  border-radius: 9px;
+  box-shadow: inset 0 0 18px rgba(4, 29, 44, 0.38), 0 4px 12px rgba(2, 20, 32, 0.24);
 }
 
 .minimap-panel footer {
@@ -239,7 +256,8 @@ body {
 
 .pause-toggle {
   position: fixed;
-  top: 490px;
+  top: auto;
+  bottom: 222px;
   right: 18px;
   z-index: 4;
   padding: 8px 11px;
@@ -352,17 +370,19 @@ body {
 
 .health-panel {
   position: fixed;
-  top: 46px;
+  top: auto;
+  bottom: 18px;
   left: 14px;
   z-index: 4;
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 5px 10px;
+  padding: 7px 11px;
   color: white;
-  background: rgba(8, 24, 36, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 7px;
+  background: var(--hud-bg);
+  border: 2px solid var(--hud-edge-soft);
+  border-radius: 10px;
+  box-shadow: 0 8px 22px rgba(3, 24, 38, 0.34);
 }
 
 .health-icon { font-size: 13px; color: #ff5c6a; }
@@ -398,13 +418,13 @@ body {
   z-index: 4;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  width: 270px;
+  width: 280px;
   overflow: hidden;
   color: white;
-  background: rgba(8, 38, 62, 0.94);
-  border: 2px solid rgba(183, 220, 236, 0.9);
-  border-radius: 12px;
-  box-shadow: 0 10px 28px rgba(7, 33, 48, 0.32);
+  background: var(--hud-bg);
+  border: 2px solid var(--hud-edge);
+  border-radius: 13px;
+  box-shadow: var(--hud-shadow);
   backdrop-filter: blur(8px);
   pointer-events: none;
 }
@@ -414,7 +434,7 @@ body {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 8px 11px;
+  padding: 9px 12px;
 }
 
 .training-status-item + .training-status-item {
@@ -422,7 +442,7 @@ body {
 }
 
 .training-status-icon {
-  color: #8de6ff;
+  color: var(--hud-blue);
   font-size: 20px;
   line-height: 1;
 }
@@ -436,7 +456,7 @@ body {
 
 .training-status-copy small {
   margin-bottom: 3px;
-  color: #b9dbe9;
+  color: var(--hud-muted);
   font-size: 9px;
   font-weight: 800;
 }
@@ -463,13 +483,13 @@ body {
   z-index: 4;
   display: flex;
   align-items: stretch;
-  width: 270px;
+  width: 280px;
   overflow: hidden;
   color: white;
-  background: rgba(8, 38, 62, 0.94);
+  background: var(--hud-bg);
   border: 2px solid rgba(255, 224, 112, 0.9);
   border-radius: 12px;
-  box-shadow: 0 10px 28px rgba(7, 33, 48, 0.32);
+  box-shadow: var(--hud-shadow);
   backdrop-filter: blur(8px);
   transition: opacity 200ms ease, transform 200ms ease, border-color 200ms ease;
   pointer-events: none;
@@ -521,23 +541,39 @@ body {
   top: 90px;
   left: 14px;
   z-index: 4;
-  width: 230px;
+  width: 260px;
   color: white;
-  background: rgba(8, 38, 62, 0.94);
-  border: 2px solid rgba(183, 220, 236, 0.9);
-  border-radius: 14px;
-  box-shadow: 0 12px 34px rgba(7, 33, 48, 0.35);
+  background: var(--hud-bg);
+  border: 2px solid var(--hud-edge);
+  border-radius: 16px;
+  box-shadow: var(--hud-shadow);
   backdrop-filter: blur(8px);
   overflow: hidden;
 }
 
 .mission-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 8px 14px;
-  background: linear-gradient(180deg, #164c70, #0c3858);
+  background: var(--hud-header);
   border-bottom: 1px solid rgba(255, 255, 255, .25);
+  box-shadow: inset 0 -2px 0 rgba(83, 245, 125, 0.52);
   font-size: 13px;
   font-weight: 900;
   letter-spacing: .04em;
+}
+
+.mission-panel header span {
+  min-width: 42px;
+  padding: 3px 7px;
+  color: #07301d;
+  background: var(--hud-green);
+  border: 1px solid rgba(218, 255, 229, 0.88);
+  border-radius: 999px;
+  box-shadow: inset 0 -2px 0 rgba(5, 83, 39, 0.22);
+  text-align: center;
+  font: 900 11px/1.1 "Consolas", "Courier New", monospace;
 }
 
 .mission-list {
@@ -546,16 +582,21 @@ body {
   padding: 9px 12px;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 5px;
 }
 
 .mission-item {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: 30px;
+  padding: 5px 7px;
+  border-left: 3px solid transparent;
+  border-radius: 7px;
   font-size: 12px;
   font-weight: 700;
-  color: #d9eff7;
+  color: var(--hud-copy);
+  transition: color 150ms ease, background 150ms ease, border-color 150ms ease;
 }
 
 .mission-item.is-hidden {
@@ -564,6 +605,8 @@ body {
 
 .mission-item.is-current {
   color: #ffffff;
+  background: linear-gradient(90deg, rgba(255, 227, 107, 0.2), rgba(255, 227, 107, 0.04));
+  border-left-color: var(--hud-yellow);
 }
 
 .mission-item.is-current .mission-check {
@@ -593,8 +636,7 @@ body {
 }
 
 .mission-item.is-done .mission-text {
-  color: #9fd6a8;
-  text-decoration: line-through;
+  color: #a8dab5;
 }
 
 .guidance-banner {
@@ -828,12 +870,12 @@ body {
   bottom: 18px;
   right: 18px;
   z-index: 4;
-  width: 150px;
+  width: 176px;
   color: white;
-  background: rgba(8, 38, 62, 0.94);
-  border: 2px solid rgba(183, 220, 236, 0.9);
-  border-radius: 14px;
-  box-shadow: 0 12px 34px rgba(7, 33, 48, 0.35);
+  background: var(--hud-bg-deep);
+  border: 2px solid var(--hud-edge);
+  border-radius: 16px;
+  box-shadow: var(--hud-shadow);
   backdrop-filter: blur(8px);
   overflow: hidden;
   transition: border-color 200ms ease;
@@ -846,8 +888,9 @@ body {
 
 .flood-panel header {
   padding: 8px 14px;
-  background: linear-gradient(180deg, #164c70, #0c3858);
+  background: var(--hud-header);
   border-bottom: 1px solid rgba(255, 255, 255, .25);
+  box-shadow: inset 0 -2px 0 rgba(86, 201, 255, 0.54);
   font-size: 12px;
   font-weight: 900;
   letter-spacing: .04em;
@@ -856,15 +899,16 @@ body {
 .flood-body {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 14px 4px;
+  gap: 9px;
+  padding: 13px 14px 5px;
+  background: radial-gradient(circle at 30% 35%, rgba(61, 161, 210, 0.13), transparent 62%);
 }
 
 .flood-gauge {
   position: relative;
   flex-shrink: 0;
-  width: 16px;
-  height: 90px;
+  width: 20px;
+  height: 104px;
   background: rgba(255, 255, 255, 0.12);
   border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 8px;
@@ -877,13 +921,14 @@ body {
   left: 0;
   width: 100%;
   height: 0%;
-  background: linear-gradient(180deg, #4fc3f7, #1f7fb8);
+  background: linear-gradient(180deg, #83e7ff 0%, #31aee8 46%, #176ea9 100%);
+  box-shadow: 0 0 12px rgba(80, 199, 247, 0.58);
   transition: height 200ms linear;
 }
 
 .flood-gauge-ticks {
   flex-shrink: 0;
-  height: 90px;
+  height: 104px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -899,7 +944,7 @@ body {
   gap: 2px;
 }
 
-.flood-value { font-size: 22px; font-weight: 900; }
+.flood-value { color: var(--hud-blue); font-size: 28px; font-weight: 900; text-shadow: 0 2px 8px rgba(37, 160, 215, 0.38); }
 .flood-unit { font-size: 12px; font-weight: 700; color: #cdeaf7; }
 
 .flood-forecast {
@@ -907,7 +952,8 @@ body {
   padding: 6px 14px 10px;
   font-size: 10px;
   font-weight: 700;
-  color: #cdeaf7;
+  color: #d8f3ff;
+  background: linear-gradient(90deg, rgba(30, 124, 180, 0.32), rgba(30, 124, 180, 0.08));
   border-top: 1px solid rgba(255, 255, 255, 0.15);
 }
 
@@ -923,7 +969,7 @@ body {
   .inventory-bar { left: 50%; bottom: 104px; padding: 5px 7px; }
   .inventory-slot { width: 42px; height: 42px; }
   .inventory-slot-icon { font-size: 19px; }
-  .pause-toggle { top: 336px; right: 10px; }
+  .pause-toggle { top: 336px; right: 10px; bottom: auto; }
   .pause-help-grid { grid-template-columns: 1fr; }
   .training-status-panel { top: 220px; right: 10px; width: 190px; }
   .evacuation-alert { top: 274px; right: 10px; width: 190px; }
@@ -933,7 +979,7 @@ body {
   .training-status-item { gap: 5px; padding: 7px; }
   .training-status-icon { display: none; }
   .training-status-copy strong { font-size: 14px; }
-  .health-panel { top: 42px; }
+  .health-panel { top: 42px; bottom: auto; }
   .health-bar { width: 60px; }
   .mission-panel { width: 190px; top: 78px; }
   .guidance-banner { padding: 7px 12px; }
@@ -1114,6 +1160,7 @@ body {
   }
   .health-panel {
     top: calc(40px + env(safe-area-inset-top, 0px));
+    bottom: auto;
     left: calc(8px + env(safe-area-inset-left, 0px));
   }
   .offline-status {
@@ -1147,13 +1194,13 @@ body {
   .hazard-legend { gap: 3px 8px; padding: 0 8px 7px; font-size: 7px; }
 
   .training-status-panel {
-    top: calc(206px + env(safe-area-inset-top, 0px));
+    top: calc(226px + env(safe-area-inset-top, 0px));
     right: calc(8px + env(safe-area-inset-right, 0px));
     width: 174px;
   }
 
   .evacuation-alert {
-    top: calc(258px + env(safe-area-inset-top, 0px));
+    top: calc(278px + env(safe-area-inset-top, 0px));
     right: calc(8px + env(safe-area-inset-right, 0px));
     width: 174px;
   }
@@ -1164,8 +1211,9 @@ body {
   .evacuation-alert-copy small { font-size: 7px; }
 
   .pause-toggle {
-    top: calc(314px + env(safe-area-inset-top, 0px));
+    top: calc(334px + env(safe-area-inset-top, 0px));
     right: calc(8px + env(safe-area-inset-right, 0px));
+    bottom: auto;
   }
   .guidance-banner { display: none; }
 
@@ -1204,6 +1252,8 @@ body {
   .flood-panel header { padding: 7px 10px; font-size: 10px; }
   .flood-body { padding: 9px 10px 3px; }
   .flood-gauge, .flood-gauge-ticks { height: 72px; }
+  .flood-gauge { width: 16px; }
+  .flood-value { font-size: 22px; }
   .flood-forecast { padding: 5px 10px 7px; font-size: 8px; }
   .interaction-prompt { bottom: calc(250px + env(safe-area-inset-bottom, 0px)); }
 
@@ -1224,7 +1274,7 @@ body {
 
 .edit-panel {
   position: fixed;
-  bottom: 18px;
+  bottom: 66px;
   left: 18px;
   z-index: 5;
   display: flex;
