@@ -45,6 +45,7 @@ import { resolveThirdPersonCamera, yawTowardPoint } from './modules/camera-geome
 import { successPresentationState } from './modules/completion-presentation.js?v=20260908-1';
 import { floodSurfaceVisualState, wadingEffectState } from './modules/water-effects.js?v=20260908-1';
 import { routePulseState, sampleRoutePolyline } from './modules/route-presentation.js?v=20260908-1';
+import { shelterLandmarkState } from './modules/shelter-landmark.js?v=20260908-1';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -3540,6 +3541,142 @@ function createEvacuationSign(config, origin, parent) {
   }
 }
 
+let shelterRooftopSignMaterial = null;
+let shelterLandmarkBeacon = null;
+let shelterLandmarkBeamMaterial = null;
+let shelterLandmarkRingMaterial = null;
+let shelterLandmarkCrownMaterial = null;
+let shelterLandmarkBaseY = 0;
+
+function createShelterLandmark(config, origin, parent) {
+  const signTexture = createSignTexture((ctx, width, height) => {
+    const gradient = ctx.createLinearGradient(0, 0, 0, height);
+    gradient.addColorStop(0, '#248952');
+    gradient.addColorStop(1, '#0f6138');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+    ctx.strokeStyle = '#eafff0';
+    ctx.lineWidth = 12;
+    ctx.strokeRect(10, 10, width - 20, height - 20);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(42, 44, 154, height - 88);
+    ctx.fillStyle = '#167143';
+    ctx.font = '900 98px "Yu Gothic UI", "Meiryo", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('↗', 119, height / 2 - 2);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 118px "Yu Gothic UI", "Meiryo", sans-serif';
+    ctx.fillText('避 難 所', 232, height * 0.48);
+    ctx.fillStyle = '#d9f9e4';
+    ctx.font = '700 38px sans-serif';
+    ctx.fillText('EVACUATION SHELTER  •  高台', 238, height * 0.79);
+  }, 1024, 288);
+
+  shelterRooftopSignMaterial = new THREE.MeshStandardMaterial({
+    map: signTexture,
+    color: 0xffffff,
+    roughness: 0.38,
+    metalness: 0.06,
+    emissive: 0x0b4b29,
+    emissiveIntensity: 0.3
+  });
+  const edgeMaterial = new THREE.MeshStandardMaterial({
+    color: 0x164f31,
+    roughness: 0.65,
+    metalness: 0.1
+  });
+  const signWidth = (config.halfBlocks * 2 + 4) * tileSize;
+  const signHeight = 3.3 * tileSize;
+  const roofTopY = origin.y + (config.wallHeightBlocks + config.roofHeightBlocks + 0.75) * tileSize;
+  const signCenterY = roofTopY + signHeight * 0.72;
+  const sign = new THREE.Mesh(
+    new THREE.BoxGeometry(signWidth, signHeight, tileSize * 0.42),
+    [
+      edgeMaterial,
+      edgeMaterial,
+      edgeMaterial,
+      edgeMaterial,
+      shelterRooftopSignMaterial,
+      shelterRooftopSignMaterial
+    ]
+  );
+  sign.name = 'ShelterRooftopLandmarkSign';
+  sign.position.set(origin.x, signCenterY, origin.z + tileSize * 0.3);
+  sign.castShadow = true;
+  parent.add(sign);
+
+  const postHeight = signCenterY - roofTopY;
+  const postGeometry = new THREE.BoxGeometry(tileSize * 0.48, postHeight, tileSize * 0.48);
+  const postMaterial = new THREE.MeshStandardMaterial({
+    color: 0x355443,
+    roughness: 0.58,
+    metalness: 0.3
+  });
+  for (const side of [-1, 1]) {
+    const post = new THREE.Mesh(postGeometry, postMaterial);
+    post.position.set(
+      origin.x + side * signWidth * 0.38,
+      roofTopY + postHeight / 2,
+      origin.z + tileSize * 0.3
+    );
+    post.castShadow = true;
+    parent.add(post);
+  }
+
+  shelterLandmarkBeamMaterial = new THREE.MeshBasicMaterial({
+    color: 0x48ff82,
+    transparent: true,
+    opacity: 0.16,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending
+  });
+  shelterLandmarkRingMaterial = new THREE.MeshBasicMaterial({
+    color: 0x6dff94,
+    transparent: true,
+    opacity: 0.62,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending
+  });
+  shelterLandmarkCrownMaterial = new THREE.MeshStandardMaterial({
+    color: 0xeaffef,
+    emissive: 0x28d865,
+    emissiveIntensity: 1.35,
+    roughness: 0.26
+  });
+  shelterLandmarkBeacon = new THREE.Group();
+  shelterLandmarkBeacon.name = 'ShelterDistanceBeacon';
+  shelterLandmarkBaseY = roofTopY;
+  shelterLandmarkBeacon.position.set(origin.x, shelterLandmarkBaseY, origin.z);
+
+  const beamHeight = 3.6;
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.12, 0.62, beamHeight, 20, 1, true),
+    shelterLandmarkBeamMaterial
+  );
+  beam.position.y = beamHeight / 2;
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.42, 0.56, 32),
+    shelterLandmarkRingMaterial
+  );
+  ring.geometry.rotateX(-Math.PI / 2);
+  ring.position.y = beamHeight;
+  const crown = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.34, 0),
+    shelterLandmarkCrownMaterial
+  );
+  crown.position.y = beamHeight + 0.18;
+  shelterLandmarkBeacon.add(beam, ring, crown);
+  shelterLandmarkBeacon.userData = { beam, ring, crown };
+  shelterLandmarkBeacon.visible = false;
+  parent.add(shelterLandmarkBeacon);
+}
+
 // A simple wooden perimeter fence with a gap left open in front of the door.
 // worldX/worldZ/groundY are the actual ground surface under the shelter -
 // NOT the block-center building origin (which sits tileSize/2 higher).
@@ -3712,6 +3849,7 @@ function buildEvacuationShelter() {
   walkableStepZones.push(stepZone);
 
   createEvacuationSign(config, origin, group);
+  createShelterLandmark(config, origin, group);
   createShelterFence(config, origin.x, origin.z, groundY, group);
 
   registerMovableStructure({
@@ -4009,6 +4147,34 @@ function shelterApproachPoint() {
   const x = (c.minX + c.maxX) / 2;
   const z = c.maxZ + tileSize * 3;
   return { x, z };
+}
+
+function updateShelterLandmark(now) {
+  if (!shelterLandmarkBeacon || !shelterRooftopSignMaterial) return;
+  const shelterCenterX = (missionShelter.collider.minX + missionShelter.collider.maxX) / 2;
+  const shelterCenterZ = (missionShelter.collider.minZ + missionShelter.collider.maxZ) / 2;
+  const distance = Math.hypot(
+    player.position.x - shelterCenterX,
+    player.position.z - shelterCenterZ
+  );
+  const state = shelterLandmarkState(
+    distance,
+    now / 1000,
+    characterChosen && !missionReachShelterDone && !trainingCompleteShown
+  );
+  shelterRooftopSignMaterial.emissiveIntensity = state.signGlow;
+  shelterLandmarkBeacon.visible = state.visible;
+  canvas.dataset.shelterLandmarkDistance = distance.toFixed(1);
+  if (!state.visible) return;
+
+  shelterLandmarkBeacon.position.y = shelterLandmarkBaseY + state.bobMeters;
+  shelterLandmarkBeacon.scale.setScalar(state.beaconScale);
+  shelterLandmarkBeamMaterial.opacity = state.beamOpacity;
+  shelterLandmarkRingMaterial.opacity = state.beaconOpacity;
+  shelterLandmarkCrownMaterial.emissiveIntensity = 0.9 + state.beaconOpacity * 1.2;
+  const { ring, crown } = shelterLandmarkBeacon.userData;
+  ring.rotation.z = now * 0.00055;
+  crown.rotation.y = now * 0.00125;
 }
 
 function routeNodeWorld(gridX, gridZ) {
@@ -8173,6 +8339,7 @@ function animate(now) {
     updateTrainingStatus(trainingFinishTime || pauseStartedAt);
     updateSuccessPresentation(now);
   }
+  if (!gamePaused) updateShelterLandmark(now);
   renderer.render(scene, camera);
 
   if (characterChosen && !trainingCompleteShown && now >= nextProgressSaveTime) {
