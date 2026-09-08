@@ -42,6 +42,7 @@ import { cityReliefHeightBlocks } from './modules/terrain-elevation.js?v=2026090
 import { weatherVisualState } from './modules/atmosphere.js?v=20260904-1';
 import { escortFormationTarget, roleMotionProfile } from './modules/character-motion.js?v=20260904-1';
 import { resolveThirdPersonCamera, yawTowardPoint } from './modules/camera-geometry.js?v=20260908-1';
+import { successPresentationState } from './modules/completion-presentation.js?v=20260908-1';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -153,6 +154,7 @@ const trainingFeedbackTitle = document.querySelector('#trainingFeedbackTitle');
 const statRank = document.querySelector('#statRank');
 const statScore = document.querySelector('#statScore');
 const trainingPersonalBest = document.querySelector('#trainingPersonalBest');
+const trainingDetails = document.querySelector('#trainingDetails');
 const statScenario = document.querySelector('#statScenario');
 const statElapsedTime = document.querySelector('#statElapsedTime');
 const statRescuedPeople = document.querySelector('#statRescuedPeople');
@@ -5625,6 +5627,19 @@ function updateNpcInteraction(dt) {
 // order, so each completion path calls this and it only fires once, when
 // the second one lands.
 let trainingCompleteShown = false;
+let successPresentationActive = false;
+let successPresentationStartedAt = 0;
+let successPresentationScore = 0;
+let successPresentationFocused = false;
+const reduceSuccessMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const successCameraStart = new THREE.Vector3();
+const successCameraEnd = new THREE.Vector3();
+const successLookStart = new THREE.Vector3();
+const successLookEnd = new THREE.Vector3();
+const successLookCurrent = new THREE.Vector3();
+const successPlayerStart = new THREE.Vector3();
+const successPlayerEnd = new THREE.Vector3();
+let successNpcTableau = [];
 let routeSampleTimer = 0;
 let routeSampleCount = 0;
 let safeRouteSampleCount = 0;
@@ -5734,9 +5749,77 @@ function trainingFailureFeedback() {
   return feedback;
 }
 
+function beginSuccessPresentation(result) {
+  const shelter = shelterWorldCenter();
+  const shelterFrontZ = missionShelter.collider.maxZ;
+  const tableauGroundY = getWalkableHeight(shelter.x, shelterFrontZ + 0.35);
+
+  successPresentationStartedAt = performance.now();
+  successPresentationScore = result.score;
+  successPresentationFocused = false;
+  successPresentationActive = true;
+  successCameraStart.copy(camera.position);
+  successLookStart.copy(cameraLookTarget);
+  successCameraEnd.set(shelter.x + 10, tableauGroundY + 8, shelter.z + 15);
+  successLookEnd.set(shelter.x, tableauGroundY + 1.8, shelter.z + 3.4);
+  successPlayerStart.copy(player.position);
+  successPlayerEnd.set(shelter.x - 3.6, tableauGroundY, shelterFrontZ + 0.42);
+  successNpcTableau = npcHelpers
+    .filter((npc) => npc.rescued)
+    .sort((a, b) => a.rescuedOrder - b.rescuedOrder)
+    .map((npc, index, rescued) => ({
+      npc,
+      start: npc.group.position.clone(),
+      end: new THREE.Vector3(
+        shelter.x + (index - (rescued.length - 1) / 2) * 1.85,
+        tableauGroundY,
+        shelterFrontZ + 0.2
+      )
+    }));
+
+  statScore.textContent = '0';
+  trainingComplete.classList.remove('is-hidden', 'is-failed', 'is-title-visible', 'is-stats-visible');
+  trainingComplete.classList.add('is-success', 'is-cinematic');
+  updateSuccessPresentation(successPresentationStartedAt);
+}
+
+function updateSuccessPresentation(now) {
+  if (!successPresentationActive) return;
+  const state = successPresentationState(now - successPresentationStartedAt, reduceSuccessMotion);
+  camera.position.lerpVectors(successCameraStart, successCameraEnd, state.cameraProgress);
+  successLookCurrent.lerpVectors(successLookStart, successLookEnd, state.cameraProgress);
+  camera.lookAt(successLookCurrent);
+
+  player.position.lerpVectors(successPlayerStart, successPlayerEnd, state.cameraProgress);
+  player.rotation.y = Math.atan2(
+    -(camera.position.x - player.position.x),
+    -(camera.position.z - player.position.z)
+  );
+  successNpcTableau.forEach(({ npc, start, end }) => {
+    npc.group.position.lerpVectors(start, end, state.cameraProgress);
+  });
+  poseNpcShelterCelebration();
+
+  trainingComplete.classList.toggle('is-title-visible', state.titleVisible);
+  trainingComplete.classList.toggle('is-stats-visible', state.statsVisible);
+  statScore.textContent = Math.round(successPresentationScore * state.scoreProgress).toLocaleString('ja-JP');
+  canvas.dataset.successCameraProgress = state.cameraProgress.toFixed(3);
+
+  if (state.focusReady) {
+    statScore.textContent = successPresentationScore.toLocaleString('ja-JP');
+    trainingComplete.classList.remove('is-cinematic');
+    if (!successPresentationFocused) {
+      successPresentationFocused = true;
+      trainingRetryButton.focus({ preventScroll: true });
+    }
+    successPresentationActive = false;
+  }
+}
+
 function showTrainingFailure() {
   if (trainingCompleteShown) return;
   trainingCompleteShown = true;
+  successPresentationActive = false;
   clearTrainingProgress();
   setRainAudioLevel(0);
   playToneSequence([
@@ -5749,6 +5832,7 @@ function showTrainingFailure() {
   if (document.pointerLockElement) document.exitPointerLock();
   pauseMenu.classList.add('is-hidden');
   pauseToggle.classList.add('is-hidden');
+  trainingComplete.classList.remove('is-success', 'is-cinematic', 'is-title-visible', 'is-stats-visible');
   trainingComplete.classList.add('is-failed');
   trainingResultTitle.textContent = '避難猶予を超過しました';
   trainingResultSubtitle.textContent = '訓練を振り返り、次は警戒レベルが低いうちに避難を始めましょう。';
@@ -5772,6 +5856,7 @@ function showTrainingFailure() {
   statRespawns.textContent = `${respawnCount}回`;
   trainingFeedbackList.innerHTML = trainingFailureFeedback().map((message) => `<li>${message}</li>`).join('');
   trainingRetryButton.textContent = '同じ訓練に再挑戦する';
+  trainingDetails.open = true;
   trainingComplete.classList.remove('is-hidden');
   trainingRetryButton.focus();
 }
@@ -5795,8 +5880,8 @@ function checkTrainingComplete() {
   ]);
   trainingFinishTime = performance.now();
   trainingComplete.classList.remove('is-failed');
-  trainingResultTitle.textContent = '訓練完了！';
-  trainingResultSubtitle.textContent = 'お疲れ様でした。避難行動を無事にやり遂げました。';
+  trainingResultTitle.textContent = 'ミッション成功！';
+  trainingResultSubtitle.textContent = '避難に成功しました！ おつかれさまでした。';
   trainingFeedbackTitle.textContent = '今回の振り返り';
   const result = trainingResult();
   const savedResult = saveTrainingRecord(result);
@@ -5817,7 +5902,9 @@ function checkTrainingComplete() {
   statHealth.textContent = `${Math.ceil(playerHealth)}/${PLAYER_MAX_HEALTH}`;
   statRespawns.textContent = `${respawnCount}回`;
   trainingFeedbackList.innerHTML = feedback.map((message) => `<li>${message}</li>`).join('');
-  trainingComplete.classList.remove('is-hidden');
+  trainingRetryButton.textContent = 'もう一度訓練する';
+  trainingDetails.open = false;
+  beginSuccessPresentation(result);
 }
 
 trainingRetryButton.addEventListener('click', () => {
@@ -7690,6 +7777,7 @@ function animate(now) {
     }
   } else {
     updateTrainingStatus(trainingFinishTime || pauseStartedAt);
+    updateSuccessPresentation(now);
   }
   renderer.render(scene, camera);
 
