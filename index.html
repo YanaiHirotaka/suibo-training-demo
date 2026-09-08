@@ -10,7 +10,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon.svg">
-  <link rel="stylesheet" href="./styles.css?v=20260908-25">
+  <link rel="stylesheet" href="./styles.css?v=20260908-26">
 </head>
 <body>
   <canvas id="game" aria-label="水防訓練フィールド"></canvas>
@@ -159,20 +159,6 @@
       <p class="app-install-help is-hidden" id="appInstallHelp" role="status"></p>
       <button id="pauseResume" type="button">訓練を再開する</button>
       <small>Escキーでも再開できます</small>
-    </div>
-  </div>
-
-  <div class="decision-quiz is-hidden" id="checkpointDecision" role="dialog" aria-modal="true" aria-labelledby="checkpointDecisionTitle">
-    <div class="decision-quiz-panel">
-      <span class="decision-quiz-badge">安全行動チェック</span>
-      <h2 id="checkpointDecisionTitle">道路の冠水が始まりました。どう行動する？</h2>
-      <p>安全だと思う行動を1つ選んでください。回答中は訓練時間と水位が停止します。</p>
-      <div class="decision-options">
-        <button type="button" data-decision="safe">ハザードマップと案内を確認し、低い場所を避けて高い避難所へ進む</button>
-        <button type="button" data-decision="river">距離が短いので、川沿いの道を急いで進む</button>
-        <button type="button" data-decision="underpass">雨を避けられるアンダーパスを通る</button>
-      </div>
-      <p class="decision-feedback" id="checkpointDecisionFeedback" aria-live="polite">水は低い場所へ集まり、見た目より深くなることがあります。</p>
     </div>
   </div>
 
@@ -404,7 +390,6 @@
         <summary>詳しい訓練結果</summary>
         <ul class="training-stats">
           <li><span>非常持出品</span><strong id="statPreparedItems">--</strong></li>
-          <li><span>安全行動の判断</span><strong id="statDecision">--</strong></li>
           <li><span>危険水域にいた時間</span><strong id="statDangerTime">--</strong></li>
           <li><span>体力</span><strong id="statHealth">--</strong></li>
           <li><span>危険な状況からの復帰</span><strong id="statRespawns">--</strong></li>
@@ -418,6 +403,6 @@
     </div>
   </div>
 
-  <script type="module" src="./app.js?v=20260908-68"></script>
+  <script type="module" src="./app.js?v=20260908-69"></script>
 </body>
 </html>

@@ -50,6 +50,10 @@ import { cityBackdropLightState, createCityBackdropPlan } from './modules/city-b
 import { observedWaterLevelDelta, waterObservationPresentation } from './modules/water-observation.js?v=20260908-1';
 import { shouldRecalculateRoute } from './modules/route-recalculation.js?v=20260908-1';
 import { cableSagOffset, createUrbanUtilityPlan } from './modules/urban-utilities.js?v=20260908-1';
+import {
+  createShelterArrivalZone,
+  isInsideShelterArrivalZone
+} from './modules/shelter-arrival.js?v=20260908-1';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -97,8 +101,6 @@ const touchTutorialTitle = document.querySelector('#touchTutorialTitle');
 const touchTutorialText = document.querySelector('#touchTutorialText');
 const touchTutorialNext = document.querySelector('#touchTutorialNext');
 const touchTutorialSkip = document.querySelector('#touchTutorialSkip');
-const checkpointDecision = document.querySelector('#checkpointDecision');
-const checkpointDecisionFeedback = document.querySelector('#checkpointDecisionFeedback');
 const minimapPanel = document.querySelector('#minimapPanel');
 const mapExpandToggle = document.querySelector('#mapExpandToggle');
 const minimapMap = document.querySelector('#minimapMap');
@@ -166,7 +168,6 @@ const statScenario = document.querySelector('#statScenario');
 const statElapsedTime = document.querySelector('#statElapsedTime');
 const statRescuedPeople = document.querySelector('#statRescuedPeople');
 const statPreparedItems = document.querySelector('#statPreparedItems');
-const statDecision = document.querySelector('#statDecision');
 const statSafeRoute = document.querySelector('#statSafeRoute');
 const statDangerTime = document.querySelector('#statDangerTime');
 const statHealth = document.querySelector('#statHealth');
@@ -229,9 +230,6 @@ const usedEmergencyItems = new Set();
 let flashlightEnabled = false;
 let gamePaused = false;
 let pauseStartedAt = 0;
-let checkpointDecisionOpen = false;
-let checkpointDecisionResolved = false;
-let checkpointDecisionMistakes = 0;
 let currentEvacuationLevel = 0;
 let mapExpanded = false;
 
@@ -4320,6 +4318,10 @@ canvas.dataset.shelterHighGroundMeters = (
 // LIVE collider (not its static config) so this keeps working if the
 // shelter is ever moved again with the edit-mode "select and move" tool.
 const missionShelter = movableStructures.find((s) => s.group.name === 'EvacuationShelter');
+const shelterArrivalZone = createShelterArrivalZone(missionShelter.collider);
+canvas.dataset.shelterArrivalPoint = `${shelterArrivalZone.x.toFixed(2)},${shelterArrivalZone.z.toFixed(2)}`;
+canvas.dataset.shelterPlayerArrivalRadius = shelterArrivalZone.playerRadius.toFixed(1);
+canvas.dataset.shelterEscortArrivalRadius = shelterArrivalZone.escortRadius.toFixed(1);
 const CHECKPOINT_BLOCK = { x: 177 + CITY_LAYOUT_SHIFT_BLOCKS, z: 170 };
 const checkpointPosition = new THREE.Vector3(
   worldXFromBlock(CHECKPOINT_BLOCK.x),
@@ -4576,10 +4578,7 @@ function currentMissionGoalKey() {
 }
 
 function shelterApproachPoint() {
-  const c = missionShelter.collider;
-  const x = (c.minX + c.maxX) / 2;
-  const z = c.maxZ + tileSize * 3;
-  return { x, z };
+  return { x: shelterArrivalZone.x, z: shelterArrivalZone.z };
 }
 
 function updateShelterLandmark(now) {
@@ -4976,69 +4975,17 @@ function completeCheckpointMission() {
   updateMissionProgress();
 }
 
-function openCheckpointDecision() {
-  if (checkpointDecisionOpen || checkpointDecisionResolved) return;
-  checkpointDecisionOpen = true;
-  checkpointDecisionFeedback.textContent = '水は低い場所へ集まり、見た目より深くなることがあります。';
-  checkpointDecisionFeedback.classList.remove('is-error');
-  setGamePaused(true);
-  pauseMenu.classList.add('is-hidden');
-  pauseToggle.classList.add('is-hidden');
-  checkpointDecision.classList.remove('is-hidden');
-  checkpointDecision.querySelector('[data-decision="safe"]').focus();
-}
-
-function answerCheckpointDecision(answer, button) {
-  if (!checkpointDecisionOpen) return;
-  if (answer === 'safe') {
-    checkpointDecisionResolved = true;
-    checkpointDecisionOpen = false;
-    checkpointDecision.classList.add('is-hidden');
-    pauseToggle.classList.remove('is-hidden');
-    setGamePaused(false);
-    completeCheckpointMission();
-    showTrainingAdvice(
-      'safe-decision',
-      '安全な判断です',
-      '冠水時は近道よりも、浸水想定を確認して低い場所を避け、高い避難所へ向かいましょう。',
-      'info', 7000, 0
-    );
-    return;
-  }
-
-  checkpointDecisionMistakes += 1;
-  button.disabled = true;
-  button.classList.add('is-wrong');
-  checkpointDecisionFeedback.classList.add('is-error');
-  checkpointDecisionFeedback.textContent = answer === 'river'
-    ? '川沿いは急な増水や流れ込みの危険があります。距離の短さだけで選ばないでください。'
-    : 'アンダーパスは水が集まりやすく、短時間で深く冠水するため避けてください。';
-}
-
-checkpointDecision.querySelectorAll('[data-decision]').forEach((button) => {
-  button.addEventListener('click', () => answerCheckpointDecision(button.dataset.decision, button));
-});
-
 function shelterWorldCenter() {
   const c = missionShelter.collider;
   return { x: (c.minX + c.maxX) / 2, z: (c.minZ + c.maxZ) / 2 };
 }
 
-function shelterArrivalRadius() {
-  // A few metres past the collider edge, so "arrived" means reaching the
-  // building's plaza/fence line rather than the exact wall.
-  const c = missionShelter.collider;
-  return (c.maxX - c.minX) / 2 + 3;
-}
-
 function rescuedPeopleOutsideShelter() {
   if (!missionHelpNpcDone) return npcHelpers.length;
-  const shelter = shelterWorldCenter();
-  const arrivalRadius = shelterArrivalRadius();
-  return npcHelpers.filter((npc) => Math.hypot(
-    npc.group.position.x - shelter.x,
-    npc.group.position.z - shelter.z
-  ) >= arrivalRadius).length;
+  return npcHelpers.filter((npc) => !isInsideShelterArrivalZone(
+    npc.group.position,
+    shelterArrivalZone
+  )).length;
 }
 
 function allRescuedPeopleAtShelter() {
@@ -5109,9 +5056,13 @@ function updateMissionGuidance() {
   const distance = Math.hypot(dx, dz);
 
   if (missionHazardChecked && !missionCheckpointDone && distance < 2.2) {
-    openCheckpointDecision();
+    completeCheckpointMission();
   }
-  const playerAtShelter = missionHelpNpcDone && distance < shelterArrivalRadius();
+  const playerAtShelter = missionHelpNpcDone && isInsideShelterArrivalZone(
+    player.position,
+    shelterArrivalZone,
+    shelterArrivalZone.playerRadius
+  );
   const waitingForEscort = playerAtShelter && !allRescuedPeopleAtShelter();
   if (!missionReachShelterDone && missionHazardChecked && missionCheckpointDone && playerAtShelter && !waitingForEscort) {
     completeMissionReachShelter();
@@ -6709,14 +6660,12 @@ function trainingResult() {
   const remainingSeconds = Math.max(0, activeScenario.timeLimitSeconds - elapsedSeconds);
   const routeRate = routeSampleCount ? safeRouteSampleCount / routeSampleCount : 1;
   const preparationRate = recommendedEmergencyItemCount() / EMERGENCY_ITEM_LIMIT;
-  const decisionBonus = Math.max(0, 600 - checkpointDecisionMistakes * 300);
   const score = Math.max(0, Math.round((
     6000
     + 1000
-    + 1000
+    + 1600
     + (rescuedPeopleTotal() / npcHelpers.length) * 1500
     + preparationRate * 800
-    + decisionBonus
     + routeRate * 2500
     + Math.min(1800, remainingSeconds * 10)
     + (playerHealth / PLAYER_MAX_HEALTH) * 1000
@@ -6724,15 +6673,13 @@ function trainingResult() {
     - dangerExposureSeconds * 20
   ) * activeScenario.scoreMultiplier));
   const rank = score >= 13500 ? 'S' : score >= 11500 ? 'A' : score >= 9000 ? 'B' : 'C';
-  return { elapsedSeconds, routeRate, preparationRate, decisionBonus, score, rank };
+  return { elapsedSeconds, routeRate, preparationRate, score, rank };
 }
 
 function trainingFeedback(result) {
   const feedback = [];
   if (result.preparationRate === 1) feedback.push('ライト・飲料水・携帯ラジオ・応急手当セットを選び、適切な避難準備ができました。');
   else feedback.push('非常持出品は、ライト・飲料水・携帯ラジオ・応急手当セットを優先しましょう。サンダルは浸水路で脱げやすく危険です。');
-  if (checkpointDecisionMistakes === 0) feedback.push('冠水時に低い場所を避ける判断を、一度で正しく選べました。');
-  else feedback.push('川沿いやアンダーパスは急な冠水の危険があります。近道より高く安全な経路を選びましょう。');
   if (result.routeRate >= 0.9) feedback.push('安全ルートをよく確認し、危険区域を避けて移動できました。');
   else if (result.routeRate >= 0.7) feedback.push('おおむね安全に移動できました。案内矢印から離れたときは、ミニマップを再確認しましょう。');
   else feedback.push('浸水区域を避けるため、3D矢印とミニマップの安全ルートに沿って移動しましょう。');
@@ -6748,7 +6695,7 @@ function trainingFeedback(result) {
 function trainingFailureFeedback() {
   const feedback = [];
   if (!missionHazardChecked) feedback.push('開始後すぐにハザードマップを開き、安全な方向を確認しましょう。');
-  else if (!missionCheckpointDone) feedback.push('安全ルートの矢印をたどり、判断チェックポイントへ早めに向かいましょう。');
+  else if (!missionCheckpointDone) feedback.push('安全ルートの矢印をたどり、チェックポイントへ早めに向かいましょう。');
   if (roadClosureActive && !roadClosureRouteConfirmed) feedback.push('通行止めが発生したら、ハザードマップを開き直して更新された迂回ルートを確認しましょう。');
   if (!missionHelpNpcDone) feedback.push(`救助できたのは${rescuedPeopleTotal()}/${npcHelpers.length}人です。支援が必要な人へ順番に声をかけましょう。`);
   else if (!missionReachShelterDone) feedback.push('同行者との距離を保ちながら、全員で避難所の入口まで到着しましょう。');
@@ -6853,9 +6800,6 @@ function showTrainingFailure() {
   statElapsedTime.textContent = formatElapsedTime(activeScenario.timeLimitSeconds * 1000);
   statRescuedPeople.textContent = `${rescuedPeopleTotal()}/${npcHelpers.length}人`;
   statPreparedItems.textContent = `${recommendedEmergencyItemCount()}/${EMERGENCY_ITEM_LIMIT}品適切`;
-  statDecision.textContent = checkpointDecisionResolved
-    ? checkpointDecisionMistakes === 0 ? '一回で正解' : `${checkpointDecisionMistakes}回再検討`
-    : '未実施';
   const routeRate = routeSampleCount ? safeRouteSampleCount / routeSampleCount : 0;
   statSafeRoute.textContent = `${Math.round(routeRate * 100)}%`;
   statDangerTime.textContent = `${dangerExposureSeconds.toFixed(1)}秒`;
@@ -6903,7 +6847,6 @@ function checkTrainingComplete() {
   statElapsedTime.textContent = formatElapsedTime(trainingFinishTime - trainingStartTime);
   statRescuedPeople.textContent = `${rescuedPeopleTotal()}/${npcHelpers.length}人`;
   statPreparedItems.textContent = `${recommendedEmergencyItemCount()}/${EMERGENCY_ITEM_LIMIT}品適切`;
-  statDecision.textContent = checkpointDecisionMistakes === 0 ? '一回で正解' : `${checkpointDecisionMistakes}回再検討`;
   statSafeRoute.textContent = `${Math.round(result.routeRate * 100)}%`;
   statDangerTime.textContent = `${dangerExposureSeconds.toFixed(1)}秒`;
   statHealth.textContent = `${Math.ceil(playerHealth)}/${PLAYER_MAX_HEALTH}`;
@@ -7007,8 +6950,6 @@ function saveTrainingProgress(now = performance.now()) {
     missionHelpNpcDone,
     missionReachShelterDone,
     roadClosureRouteConfirmed,
-    checkpointDecisionResolved,
-    checkpointDecisionMistakes,
     routeSampleCount,
     safeRouteSampleCount,
     dangerExposureSeconds,
@@ -7060,8 +7001,6 @@ function restoreTrainingProgress(progress) {
   missionHelpNpcDone = progress.missionHelpNpcDone;
   missionReachShelterDone = progress.missionReachShelterDone;
   roadClosureRouteConfirmed = Boolean(progress.roadClosureRouteConfirmed);
-  checkpointDecisionResolved = progress.checkpointDecisionResolved;
-  checkpointDecisionMistakes = progress.checkpointDecisionMistakes;
   routeSampleCount = progress.routeSampleCount || 0;
   safeRouteSampleCount = progress.safeRouteSampleCount || 0;
   dangerExposureSeconds = progress.dangerExposureSeconds || 0;
@@ -7248,10 +7187,6 @@ function resetInitialCameraView() {
 }
 
 addEventListener('keydown', (event) => {
-  if (checkpointDecisionOpen) {
-    if (event.code === 'Escape') event.preventDefault();
-    return;
-  }
   if (mapExpanded && event.code === 'Escape') {
     event.preventDefault();
     setMapExpanded(false);
