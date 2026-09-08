@@ -44,6 +44,7 @@ import { escortFormationTarget, roleMotionProfile } from './modules/character-mo
 import { resolveThirdPersonCamera, yawTowardPoint } from './modules/camera-geometry.js?v=20260908-1';
 import { successPresentationState } from './modules/completion-presentation.js?v=20260908-1';
 import { floodSurfaceVisualState, wadingEffectState } from './modules/water-effects.js?v=20260908-1';
+import { routePulseState, sampleRoutePolyline } from './modules/route-presentation.js?v=20260908-1';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -3794,16 +3795,72 @@ const safeRouteArrowGeometry = new THREE.ShapeGeometry((() => {
 })());
 safeRouteArrowGeometry.rotateX(-Math.PI / 2);
 const safeRouteArrowMaterial = new THREE.MeshBasicMaterial({
-  color: 0x53f57d,
+  color: 0x8dff9f,
   transparent: true,
-  opacity: 0.88,
+  opacity: 0.94,
   depthWrite: false,
   side: THREE.DoubleSide
+});
+const safeRouteArrowGlowMaterial = new THREE.MeshBasicMaterial({
+  color: 0x35ff72,
+  transparent: true,
+  opacity: 0.34,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+  blending: THREE.AdditiveBlending
 });
 const safeRouteArrowGroup = new THREE.Group();
 safeRouteArrowGroup.name = 'SafeRouteArrows';
 safeRouteArrowGroup.renderOrder = 8;
 scene.add(safeRouteArrowGroup);
+let safeRouteArrowMesh = null;
+let safeRouteArrowGlowMesh = null;
+let safeRouteArrowSamples = [];
+const safeRouteArrowMatrix = new THREE.Matrix4();
+const safeRouteArrowPosition = new THREE.Vector3();
+const safeRouteArrowRotation = new THREE.Quaternion();
+const safeRouteArrowScale = new THREE.Vector3();
+const safeRouteArrowColor = new THREE.Color();
+const safeRouteArrowEuler = new THREE.Euler();
+
+const routeGoalRingMaterial = new THREE.MeshBasicMaterial({
+  color: 0x56ff83,
+  transparent: true,
+  opacity: 0.78,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+  blending: THREE.AdditiveBlending
+});
+const routeGoalBeamMaterial = new THREE.MeshBasicMaterial({
+  color: 0x43f778,
+  transparent: true,
+  opacity: 0.2,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+  blending: THREE.AdditiveBlending
+});
+const routeGoalMarker = new THREE.Group();
+routeGoalMarker.name = 'CurrentRouteGoalMarker';
+const routeGoalRing = new THREE.Mesh(
+  new THREE.RingGeometry(0.34, 0.46, 32),
+  routeGoalRingMaterial
+);
+routeGoalRing.geometry.rotateX(-Math.PI / 2);
+routeGoalRing.position.y = 0.035;
+const routeGoalBeam = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.09, 0.34, 1.25, 18, 1, true),
+  routeGoalBeamMaterial
+);
+routeGoalBeam.position.y = 0.64;
+const routeGoalDiamond = new THREE.Mesh(
+  new THREE.OctahedronGeometry(0.24, 0),
+  new THREE.MeshBasicMaterial({ color: 0xe8fff0 })
+);
+routeGoalDiamond.position.y = 1.4;
+routeGoalMarker.add(routeGoalRing, routeGoalBeam, routeGoalDiamond);
+routeGoalMarker.visible = false;
+routeGoalMarker.renderOrder = 10;
+scene.add(routeGoalMarker);
 
 let safeRoutePoints = [];
 let safeRouteGoalKey = '';
@@ -4103,9 +4160,13 @@ function findSafeRoute(startWorld, goalWorld) {
 
 function renderSafeRoute() {
   safeRouteArrowGroup.clear();
+  safeRouteArrowMesh = null;
+  safeRouteArrowGlowMesh = null;
+  safeRouteArrowSamples = [];
   if (safeRoutePoints.length < 2) {
     minimapSafeRoute.setAttribute('opacity', '0');
     minimapSafeRoute.setAttribute('points', '');
+    canvas.dataset.safeRouteArrowCount = '0';
     return;
   }
 
@@ -4115,25 +4176,33 @@ function renderSafeRoute() {
   minimapSafeRoute.setAttribute('points', minimapPoints.join(' '));
   minimapSafeRoute.setAttribute('opacity', '0.95');
 
-  let distanceSinceArrow = 0;
-  for (let index = 1; index < safeRoutePoints.length; index++) {
-    const previous = safeRoutePoints[index - 1];
-    const point = safeRoutePoints[index];
-    const segmentDistance = Math.hypot(point.x - previous.x, point.z - previous.z);
-    distanceSinceArrow += segmentDistance;
-    if (distanceSinceArrow < 1.5 && index < safeRoutePoints.length - 1) continue;
-    distanceSinceArrow = 0;
-    const arrow = new THREE.Mesh(safeRouteArrowGeometry, safeRouteArrowMaterial);
-    const groundSurfaceY = getWalkableHeight(point.x, point.z) + 0.055;
-    const localFloodLevel = floodLevelAtPosition(point.x, point.z);
-    const routeSurfaceY = isFloodablePosition(point.x, point.z)
-      ? Math.max(groundSurfaceY, localFloodLevel + 0.045)
-      : groundSurfaceY;
-    arrow.position.set(point.x, routeSurfaceY, point.z);
-    arrow.rotation.y = Math.atan2(previous.x - point.x, previous.z - point.z);
-    arrow.renderOrder = 8;
-    safeRouteArrowGroup.add(arrow);
-  }
+  safeRouteArrowSamples = sampleRoutePolyline(safeRoutePoints, {
+    spacing: mobileRenderProfile ? 1.18 : 0.96,
+    startOffset: 0.44,
+    endPadding: 0.34
+  });
+  if (!safeRouteArrowSamples.length) return;
+
+  safeRouteArrowGlowMesh = new THREE.InstancedMesh(
+    safeRouteArrowGeometry,
+    safeRouteArrowGlowMaterial,
+    safeRouteArrowSamples.length
+  );
+  safeRouteArrowGlowMesh.name = 'SafeRouteArrowGlow';
+  safeRouteArrowGlowMesh.renderOrder = 8;
+  safeRouteArrowGlowMesh.frustumCulled = false;
+
+  safeRouteArrowMesh = new THREE.InstancedMesh(
+    safeRouteArrowGeometry,
+    safeRouteArrowMaterial,
+    safeRouteArrowSamples.length
+  );
+  safeRouteArrowMesh.name = 'SafeRouteArrowCore';
+  safeRouteArrowMesh.renderOrder = 9;
+  safeRouteArrowMesh.frustumCulled = false;
+  safeRouteArrowGroup.add(safeRouteArrowGlowMesh, safeRouteArrowMesh);
+  updateSafeRouteArrowHeights(performance.now());
+  canvas.dataset.safeRouteArrowCount = String(safeRouteArrowSamples.length);
 }
 
 function updateSafeRoute(dt) {
@@ -4158,14 +4227,66 @@ function updateSafeRoute(dt) {
   renderSafeRoute();
 }
 
-function updateSafeRouteArrowHeights() {
-  safeRouteArrowGroup.children.forEach((arrow) => {
-    const groundSurfaceY = getWalkableHeight(arrow.position.x, arrow.position.z) + 0.055;
-    const localFloodLevel = floodLevelAtPosition(arrow.position.x, arrow.position.z);
-    arrow.position.y = isFloodablePosition(arrow.position.x, arrow.position.z)
-      ? Math.max(groundSurfaceY, localFloodLevel + 0.045)
-      : groundSurfaceY;
-  });
+function updateSafeRouteArrowHeights(now = performance.now()) {
+  if (safeRouteArrowMesh && safeRouteArrowGlowMesh) {
+    safeRouteArrowSamples.forEach((sample, index) => {
+      const pulse = routePulseState(now / 1000, sample.distance);
+      const groundSurfaceY = getWalkableHeight(sample.x, sample.z) + 0.055;
+      const localFloodLevel = floodLevelAtPosition(sample.x, sample.z);
+      const routeSurfaceY = (isFloodablePosition(sample.x, sample.z)
+        ? Math.max(groundSurfaceY, localFloodLevel + 0.045)
+        : groundSurfaceY) + pulse.heightOffset;
+      safeRouteArrowEuler.set(0, sample.yaw, 0);
+      safeRouteArrowRotation.setFromEuler(safeRouteArrowEuler);
+
+      safeRouteArrowPosition.set(sample.x, routeSurfaceY - 0.008, sample.z);
+      safeRouteArrowScale.set(pulse.scale * 1.28, 1, pulse.scale * 1.28);
+      safeRouteArrowMatrix.compose(
+        safeRouteArrowPosition,
+        safeRouteArrowRotation,
+        safeRouteArrowScale
+      );
+      safeRouteArrowGlowMesh.setMatrixAt(index, safeRouteArrowMatrix);
+      safeRouteArrowGlowMesh.setColorAt(
+        index,
+        safeRouteArrowColor.setRGB(0.18 * pulse.intensity, pulse.intensity, 0.38 * pulse.intensity)
+      );
+
+      safeRouteArrowPosition.y = routeSurfaceY;
+      safeRouteArrowScale.set(pulse.scale, 1, pulse.scale);
+      safeRouteArrowMatrix.compose(
+        safeRouteArrowPosition,
+        safeRouteArrowRotation,
+        safeRouteArrowScale
+      );
+      safeRouteArrowMesh.setMatrixAt(index, safeRouteArrowMatrix);
+      safeRouteArrowMesh.setColorAt(
+        index,
+        safeRouteArrowColor.setRGB(0.46 * pulse.intensity, pulse.intensity, 0.58 * pulse.intensity)
+      );
+    });
+    safeRouteArrowGlowMesh.instanceMatrix.needsUpdate = true;
+    safeRouteArrowMesh.instanceMatrix.needsUpdate = true;
+    if (safeRouteArrowGlowMesh.instanceColor) safeRouteArrowGlowMesh.instanceColor.needsUpdate = true;
+    if (safeRouteArrowMesh.instanceColor) safeRouteArrowMesh.instanceColor.needsUpdate = true;
+  }
+
+  const goal = currentMissionGoal();
+  routeGoalMarker.visible = Boolean(goal);
+  if (!goal) return;
+  const markerGroundY = getWalkableHeight(goal.x, goal.z) + 0.045;
+  const markerFloodY = floodLevelAtPosition(goal.x, goal.z) + 0.05;
+  routeGoalMarker.position.set(
+    goal.x,
+    isFloodablePosition(goal.x, goal.z) ? Math.max(markerGroundY, markerFloodY) : markerGroundY,
+    goal.z
+  );
+  const markerPulse = routePulseState(now / 1000, 0);
+  routeGoalRing.scale.setScalar(markerPulse.markerScale);
+  routeGoalRingMaterial.opacity = 0.58 + markerPulse.intensity * 0.22;
+  routeGoalBeamMaterial.opacity = 0.12 + markerPulse.intensity * 0.12;
+  routeGoalDiamond.position.y = 1.34 + Math.sin(now * 0.0036) * 0.09;
+  routeGoalDiamond.rotation.y = now * 0.0012;
 }
 
 function safeRouteDistance() {
@@ -4604,7 +4725,6 @@ const waterRippleMaterial = new THREE.MeshBasicMaterial({
   opacity: 0.72,
   depthWrite: false,
   side: THREE.DoubleSide,
-  vertexColors: true,
   blending: THREE.AdditiveBlending
 });
 const waterRipples = new THREE.InstancedMesh(
@@ -4623,7 +4743,6 @@ const waterDropletMaterial = new THREE.MeshBasicMaterial({
   transparent: true,
   opacity: 0.82,
   depthWrite: false,
-  vertexColors: true,
   blending: THREE.AdditiveBlending
 });
 const waterDroplets = new THREE.InstancedMesh(
@@ -8046,7 +8165,7 @@ function animate(now) {
       updateWeather(dt);
       updateWaterEffects(now);
       updateFloodDanger(dt);
-      updateSafeRouteArrowHeights();
+      updateSafeRouteArrowHeights(now);
       updateTrainingStatus(now);
       updateRiver(now);
     }
