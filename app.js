@@ -47,6 +47,7 @@ import { floodSurfaceVisualState, wadingEffectState } from './modules/water-effe
 import { routePulseState, sampleRoutePolyline } from './modules/route-presentation.js?v=20260908-1';
 import { shelterLandmarkState } from './modules/shelter-landmark.js?v=20260908-1';
 import { cityBackdropLightState, createCityBackdropPlan } from './modules/city-backdrop.js?v=20260908-1';
+import { observedWaterLevelDelta, waterObservationPresentation } from './modules/water-observation.js?v=20260908-1';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -3518,6 +3519,35 @@ function createWaterObservationPoint() {
   beacon.castShadow = true;
   group.add(beacon);
 
+  const beaconHaloMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffc347,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+  const beaconHalo = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 8), beaconHaloMaterial);
+  beaconHalo.name = 'WaterObservationWarningHalo';
+  beaconHalo.position.copy(beacon.position);
+  beaconHalo.renderOrder = 4;
+  group.add(beaconHalo);
+
+  // Orange pointer at the top of the staff shows the scenario's forecast
+  // maximum, so players can compare current level and expected peak at a glance.
+  const forecastMarker = new THREE.Mesh(
+    new THREE.ConeGeometry(0.14, 0.34, 3),
+    new THREE.MeshStandardMaterial({
+      color: 0xff9f2e,
+      emissive: 0x8a3100,
+      emissiveIntensity: 0.75,
+      roughness: 0.42
+    })
+  );
+  forecastMarker.name = 'WaterObservationForecastMarker';
+  forecastMarker.position.set(-0.31, 2.31, -1.91);
+  forecastMarker.rotation.z = -Math.PI / 2;
+  group.add(forecastMarker);
+
   scene.add(group);
   return {
     group,
@@ -3525,7 +3555,13 @@ function createWaterObservationPoint() {
     texture,
     gaugeFill,
     gaugeFillMaterial,
+    beacon,
     beaconMaterial,
+    beaconHalo,
+    beaconHaloMaterial,
+    observedLevel: 0,
+    previousObservedLevel: 0,
+    nextObservationAt: performance.now() + 8000,
     lastSignature: ''
   };
 }
@@ -3536,10 +3572,30 @@ function observationAlertForProgress(progress) {
 
 function updateWaterObservationPoint(force = false) {
   if (!waterObservationPoint) return;
+  const now = performance.now();
   const maxLevel = activeScenario.flood.maxLevelMeters;
   const ratio = maxLevel > 0 ? THREE.MathUtils.clamp(floodWaterLevel / maxLevel, 0, 1) : 0;
   const alert = observationAlertForProgress(ratio);
-  const signature = [activeScenario.id, floodWaterLevel.toFixed(1), alert.level, floodRisingEnabled].join(':');
+  if (force) {
+    waterObservationPoint.observedLevel = floodWaterLevel;
+    waterObservationPoint.previousObservedLevel = floodWaterLevel;
+    waterObservationPoint.nextObservationAt = now + 8000;
+  } else if (now >= waterObservationPoint.nextObservationAt) {
+    waterObservationPoint.previousObservedLevel = waterObservationPoint.observedLevel;
+    waterObservationPoint.observedLevel = floodWaterLevel;
+    waterObservationPoint.nextObservationAt = now + 8000;
+  }
+  const observedDelta = observedWaterLevelDelta(
+    floodWaterLevel,
+    waterObservationPoint.previousObservedLevel
+  );
+  const signature = [
+    activeScenario.id,
+    floodWaterLevel.toFixed(1),
+    observedDelta.toFixed(1),
+    alert.level,
+    floodRisingEnabled
+  ].join(':');
   if (!force && signature === waterObservationPoint.lastSignature) return;
   waterObservationPoint.lastSignature = signature;
 
@@ -3569,7 +3625,7 @@ function updateWaterObservationPoint(force = false) {
   ctx.fillText(`${floodWaterLevel.toFixed(1)}m`, 270, 252);
   ctx.fillStyle = '#ffad52';
   ctx.font = '800 34px "Yu Gothic UI", "Meiryo", sans-serif';
-  ctx.fillText(`開始時より +${floodWaterLevel.toFixed(1)}m`, 270, 332);
+  ctx.fillText(`前回観測より +${observedDelta.toFixed(1)}m`, 270, 332);
 
   const scaleX = 586;
   const scaleTop = 154;
@@ -3610,7 +3666,13 @@ function updateWaterObservationPoint(force = false) {
   ctx.fillText(forecastText, width / 2, 535);
   texture.needsUpdate = true;
 
-  const fillHeight = Math.max(0.025, ratio * 2);
+  const visual = waterObservationPresentation({
+    levelMeters: floodWaterLevel,
+    maxLevelMeters: maxLevel,
+    alertLevel: alert.level,
+    timeSeconds: now / 1000
+  });
+  const fillHeight = visual.fillHeight;
   gaugeFill.scale.y = fillHeight;
   gaugeFill.position.y = 0.31 + fillHeight / 2;
   const hazardColor = alert.level >= 5 ? 0x9b59b6 : alert.level >= 4 ? 0xe64b2f : alert.level >= 3 ? 0xf1b532 : 0x28a6e2;
@@ -3618,7 +3680,26 @@ function updateWaterObservationPoint(force = false) {
   gaugeFillMaterial.emissive.setHex(alert.level >= 4 ? 0x7e1608 : 0x075d91);
   beaconMaterial.color.setHex(hazardColor);
   beaconMaterial.emissive.setHex(alert.level >= 4 ? hazardColor : 0x8b5b00);
-  beaconMaterial.emissiveIntensity = alert.level >= 4 ? 2.2 : alert.level >= 3 ? 1.4 : 0.55;
+  waterObservationPoint.beaconHaloMaterial.color.setHex(hazardColor);
+  canvas.dataset.waterObservationDelta = observedDelta.toFixed(1);
+  canvas.dataset.waterObservationAlertLevel = String(alert.level);
+}
+
+function updateWaterObservationAnimation(now) {
+  if (!waterObservationPoint) return;
+  const maxLevel = activeScenario.flood.maxLevelMeters;
+  const ratio = maxLevel > 0 ? THREE.MathUtils.clamp(floodWaterLevel / maxLevel, 0, 1) : 0;
+  const alert = observationAlertForProgress(ratio);
+  const visual = waterObservationPresentation({
+    levelMeters: floodWaterLevel,
+    maxLevelMeters: maxLevel,
+    alertLevel: alert.level,
+    timeSeconds: now / 1000
+  });
+  waterObservationPoint.beacon.scale.setScalar(visual.beaconScale);
+  waterObservationPoint.beaconMaterial.emissiveIntensity = visual.beaconIntensity;
+  waterObservationPoint.beaconHalo.scale.setScalar(visual.haloScale);
+  waterObservationPoint.beaconHaloMaterial.opacity = visual.haloOpacity;
 }
 
 const waterObservationPoint = createWaterObservationPoint();
@@ -8514,6 +8595,7 @@ function animate(now) {
   if (!gamePaused) {
     updateShelterLandmark(now);
     updateCityBackdrop(now);
+    updateWaterObservationAnimation(now);
   }
   renderer.render(scene, camera);
 
