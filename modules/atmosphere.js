@@ -20,7 +20,7 @@ export function weatherVisualState(weatherIntensity, floodProgress) {
     roadMetalness: lerp(0.07, 0.16, wetness),
     pavingRoughness: lerp(0.42, 0.19, wetness),
     pavingMetalness: lerp(0.11, 0.23, wetness),
-    puddleOpacity: lerp(0, 0.11, wetness),
+    puddleOpacity: lerp(0, 0.15, wetness),
     floodOpacity: lerp(0.64, 0.76, flood),
     riverRoughness: lerp(0.08, 0.045, rain)
   };

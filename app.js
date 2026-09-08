@@ -39,10 +39,11 @@ import {
   localFloodLevelMeters
 } from './modules/flood-spread.js?v=20260902-3';
 import { cityReliefHeightBlocks } from './modules/terrain-elevation.js?v=20260902-1';
-import { weatherVisualState } from './modules/atmosphere.js?v=20260904-1';
+import { weatherVisualState } from './modules/atmosphere.js?v=20260908-2';
 import { escortFormationTarget, roleMotionProfile } from './modules/character-motion.js?v=20260904-1';
 import { resolveThirdPersonCamera, yawTowardPoint } from './modules/camera-geometry.js?v=20260908-1';
 import { successPresentationState } from './modules/completion-presentation.js?v=20260908-1';
+import { floodSurfaceVisualState, wadingEffectState } from './modules/water-effects.js?v=20260908-1';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -691,6 +692,55 @@ const riverReflectionTexture = canvasTexture((ctx, size) => {
 }, 256);
 riverReflectionTexture.wrapS = riverReflectionTexture.wrapT = THREE.RepeatWrapping;
 riverReflectionTexture.repeat.set(0.86, 4.8);
+
+// The road flood uses a separate seamless texture from the river. Its short,
+// crossed strokes keep shallow water readable from the game camera, while one
+// shared texture keeps all flood bands inexpensive on mobile.
+const floodSurfaceTexture = canvasTexture((ctx, size) => {
+  ctx.fillStyle = '#b5d9df';
+  ctx.fillRect(0, 0, size, size);
+  let seed = 419;
+  const random = () => ((seed = (seed * 48271) % 2147483647) / 2147483647);
+
+  ctx.lineCap = 'round';
+  for (let index = 0; index < 95; index += 1) {
+    const x = random() * size;
+    const y = random() * size;
+    const width = 10 + random() * 44;
+    ctx.strokeStyle = `rgba(244, 253, 255, ${0.12 + random() * 0.32})`;
+    ctx.lineWidth = 0.8 + random() * 1.7;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.quadraticCurveTo(x + width * 0.5, y + random() * 5 - 2.5, x + width, y);
+    ctx.stroke();
+  }
+  for (let index = 0; index < 45; index += 1) {
+    const x = random() * size;
+    const y = random() * size;
+    ctx.fillStyle = `rgba(15, 84, 112, ${0.04 + random() * 0.09})`;
+    ctx.fillRect(x, y, 6 + random() * 26, 1 + random());
+  }
+}, 256);
+floodSurfaceTexture.wrapS = floodSurfaceTexture.wrapT = THREE.RepeatWrapping;
+floodSurfaceTexture.repeat.set(0.82, 0.82);
+floodSurfaceTexture.magFilter = THREE.LinearFilter;
+
+const wetRoadSheenTexture = canvasTexture((ctx, size) => {
+  ctx.clearRect(0, 0, size, size);
+  const glow = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  glow.addColorStop(0, 'rgba(225, 250, 255, .82)');
+  glow.addColorStop(0.48, 'rgba(150, 214, 226, .48)');
+  glow.addColorStop(1, 'rgba(87, 151, 168, 0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, size, size);
+  ctx.strokeStyle = 'rgba(245, 254, 255, .65)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(size * 0.24, size * 0.44);
+  ctx.quadraticCurveTo(size * 0.5, size * 0.36, size * 0.77, size * 0.46);
+  ctx.stroke();
+}, 128);
+wetRoadSheenTexture.magFilter = THREE.LinearFilter;
 
 // Field dimensions, block scale, and gameplay positions come from mapConfig.
 const field = new THREE.Group();
@@ -1699,11 +1749,11 @@ const riverTileMaterial = new THREE.MeshStandardMaterial({
   opacity: 0.94
 });
 const dryRoadTint = new THREE.Color(0xffffff);
-const wetRoadTint = new THREE.Color(0xc1d0d3);
+const wetRoadTint = new THREE.Color(0x9fb8bf);
 const dryPavingTint = new THREE.Color(0xffffff);
-const wetPavingTint = new THREE.Color(0xaebfc4);
-const calmFloodColor = new THREE.Color(0x218fc4);
-const stormFloodColor = new THREE.Color(0x176f9f);
+const wetPavingTint = new THREE.Color(0x879fa6);
+const calmFloodColor = new THREE.Color(0x3f9fbd);
+const stormFloodColor = new THREE.Color(0x176b91);
 
 let grassTiles = null;
 let roadTiles = null;
@@ -1761,10 +1811,12 @@ buildPaintableTiles();
 // They share one material and one instanced draw call, so the rain response is
 // visible without adding a post-processing pass on mobile devices.
 const wetRoadSheenMaterial = new THREE.MeshBasicMaterial({
+  map: wetRoadSheenTexture,
   color: 0x6f99a3,
   transparent: true,
   opacity: 0,
-  depthWrite: false
+  depthWrite: false,
+  blending: THREE.AdditiveBlending
 });
 
 function createWetRoadSheen() {
@@ -4389,7 +4441,8 @@ let floodRisingEnabled = true;
 
 const floodTileGeometry = new THREE.BoxGeometry(tileSize * 1.012, 0.035, tileSize * 1.012);
 const floodTileMaterial = new THREE.MeshBasicMaterial({
-  color: 0x218fc4,
+  map: floodSurfaceTexture,
+  color: 0x3f9fbd,
   transparent: true,
   opacity: 0.68,
   depthWrite: false,
@@ -4501,7 +4554,8 @@ function rebuildFloodSurfaceTiles() {
     const mesh = new THREE.InstancedMesh(floodTileGeometry, floodTileMaterial, cells.length);
     mesh.name = `TerrainFloodSurfaceBand${bandIndex}`;
     cells.forEach(([x, z], index) => {
-      tileMatrix.makeTranslation(worldXFromBlock(x + 0.5), 0, worldZFromBlock(z + 0.5));
+      tileMatrix.makeRotationY(((x * 7 + z * 11) % 4) * Math.PI / 2);
+      tileMatrix.setPosition(worldXFromBlock(x + 0.5), 0, worldZFromBlock(z + 0.5));
       mesh.setMatrixAt(index, tileMatrix);
     });
     mesh.instanceMatrix.needsUpdate = true;
@@ -4531,6 +4585,228 @@ function updateFloodSurfaceBands() {
 }
 
 rebuildFloodSurfaceTiles();
+
+// Recycled ripple and droplet pools make walking through floodwater feel
+// responsive without creating and disposing Three.js objects during play.
+const WATER_RIPPLE_COUNT = mobileRenderProfile ? 8 : 16;
+const WATER_DROPLET_COUNT = mobileRenderProfile ? 14 : 28;
+const waterEffectMatrix = new THREE.Matrix4();
+const waterEffectPosition = new THREE.Vector3();
+const waterEffectScale = new THREE.Vector3();
+const waterEffectRotation = new THREE.Quaternion();
+const waterEffectColor = new THREE.Color();
+
+const waterRippleGeometry = new THREE.RingGeometry(0.075, 0.105, 18);
+waterRippleGeometry.rotateX(-Math.PI / 2);
+const waterRippleMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffffff,
+  transparent: true,
+  opacity: 0.72,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+  vertexColors: true,
+  blending: THREE.AdditiveBlending
+});
+const waterRipples = new THREE.InstancedMesh(
+  waterRippleGeometry,
+  waterRippleMaterial,
+  WATER_RIPPLE_COUNT
+);
+waterRipples.name = 'FloodWalkingRipples';
+waterRipples.renderOrder = 8;
+waterRipples.frustumCulled = false;
+const waterRippleData = Array.from({ length: WATER_RIPPLE_COUNT }, () => ({ active: false }));
+
+const waterDropletGeometry = new THREE.BoxGeometry(0.045, 0.045, 0.045);
+const waterDropletMaterial = new THREE.MeshBasicMaterial({
+  color: 0xbdefff,
+  transparent: true,
+  opacity: 0.82,
+  depthWrite: false,
+  vertexColors: true,
+  blending: THREE.AdditiveBlending
+});
+const waterDroplets = new THREE.InstancedMesh(
+  waterDropletGeometry,
+  waterDropletMaterial,
+  WATER_DROPLET_COUNT
+);
+waterDroplets.name = 'FloodWalkingSplashes';
+waterDroplets.renderOrder = 9;
+waterDroplets.frustumCulled = false;
+const waterDropletData = Array.from({ length: WATER_DROPLET_COUNT }, () => ({ active: false }));
+
+waterEffectMatrix.makeScale(0, 0, 0);
+for (let index = 0; index < WATER_RIPPLE_COUNT; index += 1) {
+  waterRipples.setMatrixAt(index, waterEffectMatrix);
+  waterRipples.setColorAt(index, waterEffectColor.setRGB(0, 0, 0));
+}
+for (let index = 0; index < WATER_DROPLET_COUNT; index += 1) {
+  waterDroplets.setMatrixAt(index, waterEffectMatrix);
+  waterDroplets.setColorAt(index, waterEffectColor.setRGB(0, 0, 0));
+}
+waterRipples.instanceMatrix.needsUpdate = true;
+waterDroplets.instanceMatrix.needsUpdate = true;
+scene.add(waterRipples, waterDroplets);
+
+let nextWaterRippleIndex = 0;
+let nextWaterDropletIndex = 0;
+let lastWadingEffectAt = Number.NEGATIVE_INFINITY;
+let lastRainRippleAt = Number.NEGATIVE_INFINITY;
+
+function emitWaterRipple(x, y, z, radius, intensity = 1, durationSeconds = 0.72) {
+  const index = nextWaterRippleIndex;
+  nextWaterRippleIndex = (nextWaterRippleIndex + 1) % WATER_RIPPLE_COUNT;
+  Object.assign(waterRippleData[index], {
+    active: true,
+    x,
+    y,
+    z,
+    radius,
+    intensity,
+    durationSeconds,
+    startedAt: performance.now()
+  });
+}
+
+function emitWaterDroplet(x, y, z, intensity) {
+  const index = nextWaterDropletIndex;
+  nextWaterDropletIndex = (nextWaterDropletIndex + 1) % WATER_DROPLET_COUNT;
+  const angle = Math.random() * Math.PI * 2;
+  const horizontalSpeed = 0.18 + Math.random() * 0.34;
+  Object.assign(waterDropletData[index], {
+    active: true,
+    x,
+    y,
+    z,
+    vx: Math.cos(angle) * horizontalSpeed,
+    vy: 0.55 + Math.random() * 0.5 * intensity,
+    vz: Math.sin(angle) * horizontalSpeed,
+    intensity,
+    durationSeconds: 0.38 + Math.random() * 0.12,
+    startedAt: performance.now()
+  });
+}
+
+function emitWadingBurst(now, state) {
+  const waterY = floodLevelAtPosition(player.position.x, player.position.z) + 0.035;
+  const lateral = Math.sin(now * 0.013) * 0.11;
+  const x = player.position.x + Math.cos(player.rotation.y) * lateral;
+  const z = player.position.z - Math.sin(player.rotation.y) * lateral;
+  emitWaterRipple(x, waterY, z, state.rippleRadiusMeters, state.intensity);
+  for (let index = 0; index < state.splashCount; index += 1) {
+    emitWaterDroplet(
+      x + (Math.random() - 0.5) * 0.14,
+      waterY + 0.025,
+      z + (Math.random() - 0.5) * 0.14,
+      state.intensity
+    );
+  }
+  lastWadingEffectAt = now;
+}
+
+function emitNearbyRainRipple(now, visual) {
+  const interval = visual.ambientRippleIntervalSeconds * (mobileRenderProfile ? 1.35 : 1) * 1000;
+  if (now - lastRainRippleAt < interval || floodWaterLevel <= 0.03) return;
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 1.2 + Math.random() * 5.2;
+    const x = player.position.x + Math.cos(angle) * distance;
+    const z = player.position.z + Math.sin(angle) * distance;
+    if (!isPositionFlooded(x, z)) continue;
+    emitWaterRipple(
+      x,
+      floodLevelAtPosition(x, z) + 0.032,
+      z,
+      0.16 + weatherIntensity * 0.12,
+      0.4 + weatherIntensity * 0.34,
+      0.58 + Math.random() * 0.26
+    );
+    lastRainRippleAt = now;
+    return;
+  }
+}
+
+function updateWaterEffectInstances(now) {
+  let activeRipples = 0;
+  waterRippleData.forEach((ripple, index) => {
+    if (!ripple.active) return;
+    const elapsed = (now - ripple.startedAt) / 1000;
+    const progress = elapsed / ripple.durationSeconds;
+    if (progress >= 1) {
+      ripple.active = false;
+      waterEffectMatrix.makeScale(0, 0, 0);
+      waterRipples.setMatrixAt(index, waterEffectMatrix);
+      return;
+    }
+    const fade = (1 - progress) * ripple.intensity;
+    const targetScale = ripple.radius / 0.105;
+    const scale = THREE.MathUtils.lerp(0.55, targetScale, progress);
+    waterEffectPosition.set(ripple.x, ripple.y, ripple.z);
+    waterEffectScale.set(scale, 1, scale);
+    waterEffectMatrix.compose(waterEffectPosition, waterEffectRotation, waterEffectScale);
+    waterRipples.setMatrixAt(index, waterEffectMatrix);
+    waterRipples.setColorAt(index, waterEffectColor.setRGB(0.44 * fade, 0.82 * fade, fade));
+    activeRipples += 1;
+  });
+
+  let activeDroplets = 0;
+  waterDropletData.forEach((droplet, index) => {
+    if (!droplet.active) return;
+    const elapsed = (now - droplet.startedAt) / 1000;
+    const progress = elapsed / droplet.durationSeconds;
+    if (progress >= 1) {
+      droplet.active = false;
+      waterEffectMatrix.makeScale(0, 0, 0);
+      waterDroplets.setMatrixAt(index, waterEffectMatrix);
+      return;
+    }
+    const fade = 1 - progress;
+    waterEffectPosition.set(
+      droplet.x + droplet.vx * elapsed,
+      droplet.y + droplet.vy * elapsed - 2.8 * elapsed * elapsed,
+      droplet.z + droplet.vz * elapsed
+    );
+    const scale = (0.68 + droplet.intensity * 0.6) * fade;
+    waterEffectScale.set(scale, scale * 1.35, scale);
+    waterEffectMatrix.compose(waterEffectPosition, waterEffectRotation, waterEffectScale);
+    waterDroplets.setMatrixAt(index, waterEffectMatrix);
+    waterDroplets.setColorAt(index, waterEffectColor.setRGB(0.55 * fade, 0.88 * fade, fade));
+    activeDroplets += 1;
+  });
+
+  waterRipples.instanceMatrix.needsUpdate = true;
+  waterDroplets.instanceMatrix.needsUpdate = true;
+  if (waterRipples.instanceColor) waterRipples.instanceColor.needsUpdate = true;
+  if (waterDroplets.instanceColor) waterDroplets.instanceColor.needsUpdate = true;
+  canvas.dataset.activeWaterRipples = String(activeRipples);
+  canvas.dataset.activeWaterDroplets = String(activeDroplets);
+}
+
+function updateWaterEffects(now) {
+  const floodProgress = activeScenario.flood.maxLevelMeters > 0
+    ? floodWaterLevel / activeScenario.flood.maxLevelMeters
+    : 0;
+  const visual = floodSurfaceVisualState(weatherIntensity, floodProgress, now / 1000);
+  floodSurfaceTexture.offset.set(visual.textureOffsetX, visual.textureOffsetY);
+  floodTileMaterial.opacity = visual.opacity;
+  floodTileMaterial.color.lerpColors(calmFloodColor, stormFloodColor, visual.deepColorMix);
+  wetRoadSheenMaterial.opacity *= visual.roadSheenPulse;
+
+  if (characterChosen) {
+    const moving = moveDirection.lengthSq() > 0.01;
+    const movementSpeed = moving
+      ? (isControlPressed('ShiftLeft') || isControlPressed('ShiftRight') ? 5.3 : 3.25)
+      : 0;
+    const wading = wadingEffectState(playerFloodDepth(), movementSpeed, mobileRenderProfile);
+    if (wading.active && now - lastWadingEffectAt >= wading.intervalSeconds * 1000) {
+      emitWadingBurst(now, wading);
+    }
+    emitNearbyRainRipple(now, visual);
+  }
+  updateWaterEffectInstances(now);
+}
 
 function isPositionFlooded(x, z) {
   return isFloodablePosition(x, z)
@@ -4683,8 +4959,6 @@ function updateWeather(dt) {
   pavingTileMaterial.color.lerpColors(dryPavingTint, wetPavingTint, visual.wetness);
   wetRoadSheenMaterial.opacity = visual.puddleOpacity;
   wetRoadSheen.visible = visual.puddleOpacity > 0.01;
-  floodTileMaterial.opacity = visual.floodOpacity;
-  floodTileMaterial.color.lerpColors(calmFloodColor, stormFloodColor, stormAmount);
   riverTileMaterial.roughness = visual.riverRoughness;
   canvas.dataset.weatherIntensity = weatherIntensity.toFixed(3);
   canvas.dataset.roadWetness = visual.wetness.toFixed(3);
@@ -7770,6 +8044,7 @@ function animate(now) {
       updateFloodLevel(dt);
       updateEvacuationAlert();
       updateWeather(dt);
+      updateWaterEffects(now);
       updateFloodDanger(dt);
       updateSafeRouteArrowHeights();
       updateTrainingStatus(now);
