@@ -41,6 +41,7 @@ import {
 import { cityReliefHeightBlocks } from './modules/terrain-elevation.js?v=20260902-1';
 import { weatherVisualState } from './modules/atmosphere.js?v=20260904-1';
 import { escortFormationTarget, roleMotionProfile } from './modules/character-motion.js?v=20260904-1';
+import { resolveThirdPersonCamera, yawTowardPoint } from './modules/camera-geometry.js?v=20260908-1';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -5995,6 +5996,7 @@ function restoreTrainingProgress(progress) {
   refreshHealthDisplay();
   updateMissionProgress();
   updateTrainingStatus(now);
+  updateCamera(0, true);
   resumeTraining.classList.add('is-hidden');
   showNpcToast('前回の自動保存から訓練を再開しました。', 3200);
   nextProgressSaveTime = now + 5000;
@@ -6047,6 +6049,7 @@ function selectCharacter(type) {
     if (!restoringTrainingProgress) clearTrainingProgress();
     trainingStartTime = performance.now();
     trainingDeadlineTime = trainingStartTime + activeScenario.timeLimitSeconds * 1000;
+    if (!restoringTrainingProgress) resetInitialCameraView();
   }
   characterChosen = true;
   ensureAudio();
@@ -6114,11 +6117,20 @@ function pruneStaleKeys(now) {
     }
   }
 }
-let cameraYaw = 0;
-let cameraPitch = 0.32;
+const INITIAL_CAMERA_PITCH = 0.26;
+const INITIAL_CAMERA_DISTANCE = 4.1;
+const CAMERA_SHOULDER_OFFSET = 0.34;
+const CAMERA_LOOK_AHEAD = 0.92;
+const CAMERA_LOOK_UP = 0.22;
+const CAMERA_COLLISION_RADIUS = 0.2;
+const CAMERA_WALL_CLEARANCE = 0.1;
+const CAMERA_FIELD_MARGIN = 0.18;
+const initialCameraYaw = yawTowardPoint(mapConfig.playerStartBlock, CHECKPOINT_BLOCK);
+let cameraYaw = initialCameraYaw;
+let cameraPitch = INITIAL_CAMERA_PITCH;
 const cameraPitchMin = -0.38;
 const cameraPitchMax = 1.48;
-let cameraDistance = 3.6;
+let cameraDistance = INITIAL_CAMERA_DISTANCE;
 let dragging = false;
 const activeCanvasPointers = new Map();
 let lastPinchDistance = 0;
@@ -6131,6 +6143,15 @@ const moveDirection = new THREE.Vector3();
 const cameraTarget = new THREE.Vector3();
 const cameraLookTarget = new THREE.Vector3();
 const desiredCamera = new THREE.Vector3();
+const resolvedCamera = new THREE.Vector3();
+
+function resetInitialCameraView() {
+  cameraYaw = initialCameraYaw;
+  cameraPitch = INITIAL_CAMERA_PITCH;
+  cameraDistance = INITIAL_CAMERA_DISTANCE;
+  player.rotation.y = initialCameraYaw;
+  updateCamera(0, true);
+}
 
 addEventListener('keydown', (event) => {
   if (checkpointDecisionOpen) {
@@ -7522,23 +7543,44 @@ function updatePlayer(dt) {
   parts.visual.position.y = moving ? Math.abs(Math.sin(walkTime * 2)) * 0.025 : 0;
 }
 
-function updateCamera(dt) {
+function updateCamera(dt, snap = false) {
   cameraTarget.set(player.position.x, player.position.y + 0.92, player.position.z);
+  const cameraForwardX = -Math.sin(cameraYaw);
+  const cameraForwardZ = -Math.cos(cameraYaw);
+  const cameraRightX = Math.cos(cameraYaw);
+  const cameraRightZ = -Math.sin(cameraYaw);
   const lookUpAmount = Math.max(0, -cameraPitch);
   cameraLookTarget.set(
-    cameraTarget.x,
-    cameraTarget.y + lookUpAmount * 2.15,
-    cameraTarget.z
+    cameraTarget.x + cameraRightX * CAMERA_SHOULDER_OFFSET + cameraForwardX * CAMERA_LOOK_AHEAD,
+    cameraTarget.y + CAMERA_LOOK_UP + lookUpAmount * 2.15,
+    cameraTarget.z + cameraRightZ * CAMERA_SHOULDER_OFFSET + cameraForwardZ * CAMERA_LOOK_AHEAD
   );
   const horizontal = Math.cos(cameraPitch) * cameraDistance;
   desiredCamera.set(
-    cameraTarget.x + Math.sin(cameraYaw) * horizontal,
+    cameraTarget.x + Math.sin(cameraYaw) * horizontal + cameraRightX * CAMERA_SHOULDER_OFFSET,
     cameraTarget.y + Math.sin(cameraPitch) * cameraDistance + 0.47,
-    cameraTarget.z + Math.cos(cameraYaw) * horizontal
+    cameraTarget.z + Math.cos(cameraYaw) * horizontal + cameraRightZ * CAMERA_SHOULDER_OFFSET
   );
   desiredCamera.y = Math.max(desiredCamera.y, player.position.y + 0.25);
-  camera.position.lerp(desiredCamera, 1 - Math.exp(-10 * dt));
+  const safeCamera = resolveThirdPersonCamera({
+    target: cameraTarget,
+    desired: desiredCamera,
+    colliders: houseColliders,
+    bounds: {
+      minX: -halfFieldWidth + CAMERA_FIELD_MARGIN,
+      maxX: halfFieldWidth - CAMERA_FIELD_MARGIN,
+      minZ: -halfFieldDepth + CAMERA_FIELD_MARGIN,
+      maxZ: halfFieldDepth - CAMERA_FIELD_MARGIN
+    },
+    collisionRadius: CAMERA_COLLISION_RADIUS,
+    clearance: CAMERA_WALL_CLEARANCE
+  });
+  resolvedCamera.set(safeCamera.x, safeCamera.y, safeCamera.z);
+  if (snap) camera.position.copy(resolvedCamera);
+  else camera.position.lerp(resolvedCamera, 1 - Math.exp(-10 * dt));
   camera.lookAt(cameraLookTarget);
+  canvas.dataset.cameraOccluded = safeCamera.occluded ? 'true' : 'false';
+  canvas.dataset.cameraDistanceRatio = safeCamera.ratio.toFixed(3);
 }
 
 function updateMinimap() {
