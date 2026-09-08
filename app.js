@@ -46,6 +46,7 @@ import { successPresentationState } from './modules/completion-presentation.js?v
 import { floodSurfaceVisualState, wadingEffectState } from './modules/water-effects.js?v=20260908-1';
 import { routePulseState, sampleRoutePolyline } from './modules/route-presentation.js?v=20260908-1';
 import { shelterLandmarkState } from './modules/shelter-landmark.js?v=20260908-1';
+import { cityBackdropLightState, createCityBackdropPlan } from './modules/city-backdrop.js?v=20260908-1';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -2885,6 +2886,177 @@ function createConfiguredBuilding(config) {
 }
 
 mapConfig.structures.additionalHouses.forEach(createConfiguredBuilding);
+
+// --- Distant city backdrop -------------------------------------------------
+// These lightweight, non-collidable buildings sit just outside the playable
+// field. They add the layered urban silhouette visible in the design target
+// without changing navigation, flooding, editor data, or gameplay collisions.
+let cityBackdropWindowMaterial = null;
+
+function createDistantCityBackdrop() {
+  const group = new THREE.Group();
+  group.name = 'DistantCityBackdrop';
+  const plan = createCityBackdropPlan(mobileRenderProfile);
+  const palette = [0x8192a0, 0xa5907e, 0x73858c, 0xa5a49a, 0x7d7481, 0x8d9d83];
+  const buildingGeometry = new THREE.BoxGeometry(1, 1, 1);
+  const buildingMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.9,
+    metalness: 0.015
+  });
+  const buildings = new THREE.InstancedMesh(buildingGeometry, buildingMaterial, plan.length);
+  buildings.name = 'BackdropBuildingBodies';
+  const matrix = new THREE.Matrix4();
+  const position = new THREE.Vector3();
+  const scale = new THREE.Vector3();
+  const rotation = new THREE.Quaternion();
+  const color = new THREE.Color();
+  const windowEntries = [];
+  const roofEntries = [];
+  const antennaEntries = [];
+  const perimeterGap = 1.8;
+
+  plan.forEach((building, buildingIndex) => {
+    if (building.side === 'north') {
+      position.set(
+        THREE.MathUtils.lerp(-halfFieldWidth + 3.5, halfFieldWidth - 3.5, building.along) + building.offset,
+        building.height / 2 - 0.04,
+        -halfFieldDepth - perimeterGap - building.depth / 2
+      );
+    } else {
+      position.set(
+        building.side === 'west'
+          ? -halfFieldWidth - perimeterGap - building.depth / 2
+          : halfFieldWidth + perimeterGap + building.depth / 2,
+        building.height / 2 - 0.04,
+        THREE.MathUtils.lerp(-halfFieldDepth + 3.5, halfFieldDepth - 9, building.along) + building.offset
+      );
+    }
+
+    scale.set(
+      building.side === 'north' ? building.width : building.depth,
+      building.height,
+      building.side === 'north' ? building.depth : building.width
+    );
+    matrix.compose(position, rotation, scale);
+    buildings.setMatrixAt(buildingIndex, matrix);
+    color.setHex(palette[building.colorIndex]);
+    color.offsetHSL(0, 0, ((buildingIndex % 3) - 1) * 0.035);
+    buildings.setColorAt(buildingIndex, color);
+
+    for (let row = 0; row < building.windowRows; row += 1) {
+      const windowY = 1.55 + row * ((building.height - 2.65) / Math.max(1, building.windowRows - 1));
+      for (let column = 0; column < building.windowColumns; column += 1) {
+        const across = ((column + 0.5) / building.windowColumns - 0.5) * building.width * 0.72;
+        if (building.side === 'north') {
+          windowEntries.push({
+            x: position.x + across,
+            y: windowY,
+            z: position.z + building.depth / 2 + 0.012,
+            rotationY: 0
+          });
+        } else {
+          windowEntries.push({
+            x: position.x + (building.side === 'west' ? building.depth / 2 + 0.012 : -building.depth / 2 - 0.012),
+            y: windowY,
+            z: position.z + across,
+            rotationY: building.side === 'west' ? Math.PI / 2 : -Math.PI / 2
+          });
+        }
+      }
+    }
+
+    roofEntries.push({
+      x: position.x,
+      y: building.height + 0.24,
+      z: position.z,
+      width: scale.x * (building.roofKind === 2 ? 0.48 : 0.34),
+      depth: scale.z * (building.roofKind === 1 ? 0.5 : 0.32),
+      height: building.roofKind === 2 ? 0.62 : 0.42
+    });
+    if (building.roofKind !== 0) {
+      antennaEntries.push({
+        x: position.x + scale.x * 0.18,
+        y: building.height + 1.04,
+        z: position.z - scale.z * 0.12,
+        height: building.roofKind === 2 ? 1.75 : 1.25
+      });
+    }
+  });
+
+  buildings.instanceMatrix.needsUpdate = true;
+  buildings.instanceColor.needsUpdate = true;
+  buildings.receiveShadow = true;
+  group.add(buildings);
+
+  cityBackdropWindowMaterial = new THREE.MeshStandardMaterial({
+    color: 0xc7edff,
+    emissive: 0x67bce3,
+    emissiveIntensity: 0.5,
+    roughness: 0.32,
+    transparent: true,
+    opacity: 0.53,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+  const windows = new THREE.InstancedMesh(
+    new THREE.PlaneGeometry(0.56, 0.34),
+    cityBackdropWindowMaterial,
+    windowEntries.length
+  );
+  windows.name = 'BackdropWindows';
+  const windowRotation = new THREE.Quaternion();
+  windowEntries.forEach((entry, index) => {
+    position.set(entry.x, entry.y, entry.z);
+    windowRotation.setFromAxisAngle(new THREE.Vector3(0, 1, 0), entry.rotationY);
+    matrix.compose(position, windowRotation, new THREE.Vector3(1, 1, 1));
+    windows.setMatrixAt(index, matrix);
+  });
+  windows.instanceMatrix.needsUpdate = true;
+  group.add(windows);
+
+  const roofMaterial = new THREE.MeshStandardMaterial({ color: 0x4f5d62, roughness: 0.78, metalness: 0.12 });
+  const roofUnits = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), roofMaterial, roofEntries.length);
+  roofUnits.name = 'BackdropRooftopUnits';
+  roofEntries.forEach((entry, index) => {
+    position.set(entry.x, entry.y, entry.z);
+    scale.set(entry.width, entry.height, entry.depth);
+    matrix.compose(position, rotation, scale);
+    roofUnits.setMatrixAt(index, matrix);
+  });
+  roofUnits.instanceMatrix.needsUpdate = true;
+  group.add(roofUnits);
+
+  const antennas = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(0.035, 0.045, 1, 6),
+    new THREE.MeshStandardMaterial({ color: 0x495359, roughness: 0.5, metalness: 0.45 }),
+    antennaEntries.length
+  );
+  antennas.name = 'BackdropAntennas';
+  antennaEntries.forEach((entry, index) => {
+    position.set(entry.x, entry.y, entry.z);
+    scale.set(1, entry.height, 1);
+    matrix.compose(position, rotation, scale);
+    antennas.setMatrixAt(index, matrix);
+  });
+  antennas.instanceMatrix.needsUpdate = true;
+  group.add(antennas);
+
+  group.userData.buildingCount = plan.length;
+  group.userData.windowCount = windowEntries.length;
+  canvas.dataset.cityBackdropBuildings = String(plan.length);
+  canvas.dataset.cityBackdropWindows = String(windowEntries.length);
+  scene.add(group);
+}
+
+function updateCityBackdrop(now) {
+  if (!cityBackdropWindowMaterial) return;
+  const lighting = cityBackdropLightState(weatherIntensity, now / 1000);
+  cityBackdropWindowMaterial.opacity = lighting.opacity;
+  cityBackdropWindowMaterial.emissiveIntensity = lighting.emissiveIntensity;
+}
+
+createDistantCityBackdrop();
 
 // --- Urban streetscape ---------------------------------------------------
 // Sidewalks are split around the main intersection so the curb never blocks
@@ -8339,7 +8511,10 @@ function animate(now) {
     updateTrainingStatus(trainingFinishTime || pauseStartedAt);
     updateSuccessPresentation(now);
   }
-  if (!gamePaused) updateShelterLandmark(now);
+  if (!gamePaused) {
+    updateShelterLandmark(now);
+    updateCityBackdrop(now);
+  }
   renderer.render(scene, camera);
 
   if (characterChosen && !trainingCompleteShown && now >= nextProgressSaveTime) {
