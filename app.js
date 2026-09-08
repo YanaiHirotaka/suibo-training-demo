@@ -29,7 +29,7 @@ import {
 import {
   EVACUATION_SHELTER_CONFIG,
   shelterHighGroundHeightBlocks
-} from './modules/shelter-terrain.js?v=20260902-1';
+} from './modules/shelter-terrain.js?v=20260908-2';
 import {
   FLOOD_ARRIVAL_BAND_COUNT,
   MAX_FLOOD_ARRIVAL_RATIO,
@@ -48,6 +48,8 @@ import { routePulseState, sampleRoutePolyline } from './modules/route-presentati
 import { shelterLandmarkState } from './modules/shelter-landmark.js?v=20260908-1';
 import { cityBackdropLightState, createCityBackdropPlan } from './modules/city-backdrop.js?v=20260908-1';
 import { observedWaterLevelDelta, waterObservationPresentation } from './modules/water-observation.js?v=20260908-1';
+import { shouldRecalculateRoute } from './modules/route-recalculation.js?v=20260908-1';
+import { cableSagOffset, createUrbanUtilityPlan } from './modules/urban-utilities.js?v=20260908-1';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -456,7 +458,14 @@ const mapConfig = Object.freeze({
       sidewalkHeightMeters: 0.2,
       crossStreet: { minX: 118 + CITY_LAYOUT_SHIFT_BLOCKS, maxX: 210 + CITY_LAYOUT_SHIFT_BLOCKS, centerZ: 148, widthBlocks: 11 },
       secondaryRoads: [
-        { name: 'ShelterApproach', orientation: 'vertical', center: 40.5 + CITY_LAYOUT_SHIFT_BLOCKS, min: 50, max: 112, widthBlocks: 9 }
+        {
+          name: 'ShelterApproach',
+          orientation: 'vertical',
+          center: EVACUATION_SHELTER_CONFIG.centerBlock.x,
+          min: 101,
+          max: 149,
+          widthBlocks: EVACUATION_SHELTER_CONFIG.highGround.rampWidthBlocks
+        }
       ],
       bridge: { centerZ: 148, widthBlocks: 9, bankOverlapBlocks: 4, deckHeightMeters: 0.28 }
     },
@@ -3399,6 +3408,174 @@ if (mapConfig.areas.roadsEnabled) {
   }
 }
 
+// --- Urban utility poles and road signs ----------------------------------
+// All props remain visual-only and sit outside the pedestrian lane. Poles and
+// crossarms are instanced, while every cable is combined into one line mesh.
+function createUrbanUtilities() {
+  const group = new THREE.Group();
+  group.name = 'UrbanUtilities';
+  const road = getRoadFromHouseBounds();
+  const urban = mapConfig.areas.urbanRoads;
+  const crossHalfWidth = urban.crossStreet.widthBlocks / 2;
+  const plan = createUrbanUtilityPlan({
+    mobile: mobileRenderProfile,
+    mainRoadSideX: road.left - urban.sidewalkWidthBlocks - 1.25,
+    mainRoadNorthZ: 24,
+    mainRoadSouthZ: tilesDeep - 10,
+    crossStreetSideZ: urban.crossStreet.centerZ - crossHalfWidth - urban.sidewalkWidthBlocks - 1.2,
+    crossStreetWestX: urban.crossStreet.minX + 4,
+    crossStreetEastX: road.left - urban.sidewalkWidthBlocks - 1.25
+  });
+  const poleHeight = 5.25;
+  const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x65594b, roughness: 0.82, metalness: 0.04 });
+  const hardwareMaterial = new THREE.MeshStandardMaterial({ color: 0x3e494d, roughness: 0.46, metalness: 0.42 });
+  const insulatorMaterial = new THREE.MeshStandardMaterial({ color: 0xd8e5dc, roughness: 0.32, metalness: 0.08 });
+  const matrix = new THREE.Matrix4();
+  const position = new THREE.Vector3();
+  const scale = new THREE.Vector3(1, 1, 1);
+  const rotation = new THREE.Quaternion();
+  const poleWorld = new Map();
+
+  const poles = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(0.1, 0.14, poleHeight, 8),
+    poleMaterial,
+    plan.poles.length
+  );
+  poles.name = 'UtilityPoleBodies';
+  const crossarms = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(1.18, 0.13, 0.14),
+    hardwareMaterial,
+    plan.poles.length
+  );
+  crossarms.name = 'UtilityPoleCrossarms';
+  const insulators = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(0.055, 0.065, 0.15, 8),
+    insulatorMaterial,
+    plan.poles.length * 3
+  );
+  insulators.name = 'UtilityPoleInsulators';
+  const upAxis = new THREE.Vector3(0, 1, 0);
+
+  plan.poles.forEach((pole, index) => {
+    const x = worldXFromBlock(pole.x);
+    const z = worldZFromBlock(pole.z);
+    const groundY = getWalkableHeight(x, z);
+    const crossarmRotation = pole.crossarmAxis === 'z' ? Math.PI / 2 : 0;
+    poleWorld.set(pole.id, { ...pole, x, z, groundY, crossarmRotation });
+
+    position.set(x, groundY + poleHeight / 2, z);
+    rotation.identity();
+    matrix.compose(position, rotation, scale);
+    poles.setMatrixAt(index, matrix);
+
+    position.set(x, groundY + poleHeight - 0.22, z);
+    rotation.setFromAxisAngle(upAxis, crossarmRotation);
+    matrix.compose(position, rotation, scale);
+    crossarms.setMatrixAt(index, matrix);
+
+    for (let wire = 0; wire < 3; wire += 1) {
+      const across = (wire - 1) * 0.34;
+      position.set(
+        x + (pole.crossarmAxis === 'x' ? across : 0),
+        groundY + poleHeight - 0.07,
+        z + (pole.crossarmAxis === 'z' ? across : 0)
+      );
+      rotation.identity();
+      matrix.compose(position, rotation, scale);
+      insulators.setMatrixAt(index * 3 + wire, matrix);
+    }
+  });
+  poles.instanceMatrix.needsUpdate = true;
+  crossarms.instanceMatrix.needsUpdate = true;
+  insulators.instanceMatrix.needsUpdate = true;
+  // Repeated street furniture is kept out of the shadow pass so the added
+  // city detail does not introduce a regular frame-time spike while walking.
+  poles.castShadow = false;
+  crossarms.castShadow = false;
+  group.add(poles, crossarms, insulators);
+
+  const cablePositions = [];
+  plan.spans.forEach((span) => {
+    const from = poleWorld.get(span.from);
+    const to = poleWorld.get(span.to);
+    if (!from || !to) return;
+    for (let wire = 0; wire < 3; wire += 1) {
+      const across = (wire - 1) * 0.34;
+      for (let segment = 0; segment < plan.cableSegmentsPerSpan; segment += 1) {
+        for (const amount of [segment / plan.cableSegmentsPerSpan, (segment + 1) / plan.cableSegmentsPerSpan]) {
+          cablePositions.push(
+            THREE.MathUtils.lerp(from.x, to.x, amount) + (from.crossarmAxis === 'x' ? across : 0),
+            THREE.MathUtils.lerp(from.groundY, to.groundY, amount) + poleHeight - 0.02 + cableSagOffset(amount),
+            THREE.MathUtils.lerp(from.z, to.z, amount) + (from.crossarmAxis === 'z' ? across : 0)
+          );
+        }
+      }
+    }
+  });
+  const cableGeometry = new THREE.BufferGeometry();
+  cableGeometry.setAttribute('position', new THREE.Float32BufferAttribute(cablePositions, 3));
+  const cables = new THREE.LineSegments(
+    cableGeometry,
+    new THREE.LineBasicMaterial({ color: 0x28363c, transparent: true, opacity: 0.82 })
+  );
+  cables.name = 'UtilityCables';
+  group.add(cables);
+
+  function addRoadSign(name, blockX, blockZ, draw, width = 0.82, height = 0.82) {
+    const x = worldXFromBlock(blockX);
+    const z = worldZFromBlock(blockZ);
+    const groundY = getWalkableHeight(x, z);
+    const signPole = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 2.15, 8), hardwareMaterial);
+    signPole.position.set(x, groundY + 1.075, z);
+    signPole.castShadow = false;
+    const texture = createSignTexture(draw, 256, 256);
+    const face = new THREE.Mesh(
+      new THREE.PlaneGeometry(width, height),
+      new THREE.MeshStandardMaterial({ map: texture, roughness: 0.45, side: THREE.DoubleSide })
+    );
+    face.name = name;
+    face.position.set(x, groundY + 2.05, z + 0.025);
+    group.add(signPole, face);
+  }
+
+  addRoadSign('SpeedLimit30Sign', road.right + urban.sidewalkWidthBlocks + 1.2, 133, (ctx, width, height) => {
+    ctx.fillStyle = '#f8f7ee';
+    ctx.fillRect(0, 0, width, height);
+    ctx.strokeStyle = '#d63b32';
+    ctx.lineWidth = 24;
+    ctx.beginPath();
+    ctx.arc(width / 2, height / 2, width * 0.39, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#24313a';
+    ctx.font = '900 106px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('30', width / 2, height / 2 + 5);
+  });
+  addRoadSign('FloodCautionSign', urban.crossStreet.maxX - 11, urban.crossStreet.centerZ - crossHalfWidth - 3.7, (ctx, width, height) => {
+    ctx.fillStyle = '#f5c542';
+    ctx.fillRect(0, 0, width, height);
+    ctx.strokeStyle = '#26343a';
+    ctx.lineWidth = 13;
+    ctx.strokeRect(7, 7, width - 14, height - 14);
+    ctx.fillStyle = '#26343a';
+    ctx.font = '900 45px "Yu Gothic UI", "Meiryo", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('浸水注意', width / 2, height * 0.43);
+    ctx.font = '800 31px "Yu Gothic UI", "Meiryo", sans-serif';
+    ctx.fillText('川に近づかない', width / 2, height * 0.68);
+  }, 1.05, 1.05);
+
+  canvas.dataset.utilityPoleCount = String(plan.poles.length);
+  canvas.dataset.utilityCableSegments = String(cablePositions.length / 6);
+  scene.add(group);
+  return group;
+}
+
+let urbanUtilities = null;
+if (mapConfig.areas.roadsEnabled) urbanUtilities = createUrbanUtilities();
+
 // --- Evacuation shelter ------------------------------------------------
 // Deliberately standalone: not in mapConfig.structures.additionalHouses, so
 // it doesn't touch the minimap or houseConfigs()/terrain-height-limiting.
@@ -4170,8 +4347,8 @@ scene.add(checkpointMarker);
 // projected flood depth, terrain slope, and whether it follows a road. This is
 // intentionally a forecast route rather than merely the shortest straight line.
 const SAFE_ROUTE_GRID_BLOCKS = 3;
-const SAFE_ROUTE_RECALCULATE_SECONDS = 2.5;
-const SAFE_ROUTE_RECALCULATE_DISTANCE = 2.2;
+const SAFE_ROUTE_RECALCULATE_COOLDOWN_SECONDS = 2.5;
+const SAFE_ROUTE_DEVIATION_METERS = 2.8;
 const safeRouteArrowGeometry = new THREE.ShapeGeometry((() => {
   const shape = new THREE.Shape();
   shape.moveTo(0, 0.48);
@@ -4255,8 +4432,9 @@ scene.add(routeGoalMarker);
 
 let safeRoutePoints = [];
 let safeRouteGoalKey = '';
-let safeRouteLastStart = new THREE.Vector2(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY);
 let safeRouteRecalculateTimer = 0;
+let safeRouteForceRecalculation = false;
+let safeRouteRecalculationCount = 0;
 
 // The low road between the elderly person and the child closes at alert
 // level 3. The blocked footprint spans the full 15-block road plus a small
@@ -4348,6 +4526,7 @@ function activateRoadClosure() {
   updateHazardToggleLabel();
   safeRouteGoalKey = '';
   safeRouteRecalculateTimer = 0;
+  safeRouteForceRecalculation = true;
   updateMissionProgress();
   playToneSequence([
     { frequency: 620, duration: 0.12, volume: 0.16 },
@@ -4370,6 +4549,7 @@ function confirmRoadClosureRoute() {
   updateHazardToggleLabel();
   safeRouteGoalKey = '';
   safeRouteRecalculateTimer = 0;
+  safeRouteForceRecalculation = true;
   updateMissionProgress();
   showNpcToast('更新された安全ルートを確認しました。', 3400);
   showTrainingAdvice(
@@ -4637,12 +4817,27 @@ function updateSafeRoute(dt) {
     return;
   }
 
-  const movedSinceRoute = safeRouteLastStart.distanceTo(new THREE.Vector2(player.position.x, player.position.z));
-  if (goalKey === safeRouteGoalKey && safeRouteRecalculateTimer > 0 && movedSinceRoute < SAFE_ROUTE_RECALCULATE_DISTANCE) return;
+  const goalChanged = goalKey !== safeRouteGoalKey;
+  const distanceFromRoute = safeRoutePoints.length >= 2
+    ? distanceToSafeRoute(player.position.x, player.position.z)
+    : Number.POSITIVE_INFINITY;
+  if (!shouldRecalculateRoute({
+    hasRoute: safeRoutePoints.length >= 2,
+    goalChanged,
+    forced: safeRouteForceRecalculation,
+    cooldownSeconds: safeRouteRecalculateTimer,
+    distanceFromRouteMeters: distanceFromRoute,
+    deviationThresholdMeters: SAFE_ROUTE_DEVIATION_METERS
+  })) return;
   safeRoutePoints = findSafeRoute(player.position, goal);
   safeRouteGoalKey = goalKey;
-  safeRouteLastStart.set(player.position.x, player.position.z);
-  safeRouteRecalculateTimer = SAFE_ROUTE_RECALCULATE_SECONDS;
+  safeRouteRecalculateTimer = SAFE_ROUTE_RECALCULATE_COOLDOWN_SECONDS;
+  safeRouteForceRecalculation = false;
+  safeRouteRecalculationCount += 1;
+  canvas.dataset.safeRouteRecalculationCount = String(safeRouteRecalculationCount);
+  canvas.dataset.safeRouteRecalculationReason = goalChanged
+    ? 'goal-changed'
+    : distanceFromRoute > SAFE_ROUTE_DEVIATION_METERS ? 'route-deviation' : 'forced';
   renderSafeRoute();
 }
 

@@ -1,5 +1,8 @@
 export const EVACUATION_SHELTER_CONFIG = Object.freeze({
-  centerBlock: Object.freeze({ x: 25.5, z: 35.5 }),
+  // Located north-west of the starting road. The south ramp ends at the
+  // cross street, creating one natural route from the start instead of a
+  // long traverse to the far corner of the map.
+  centerBlock: Object.freeze({ x: 112.5, z: 84.5 }),
   halfBlocks: 16,
   wallHeightBlocks: 11,
   roofHeightBlocks: 2,
