@@ -48,7 +48,7 @@ import { routePulseState, sampleRoutePolyline } from './modules/route-presentati
 import { shelterLandmarkState } from './modules/shelter-landmark.js?v=20260908-1';
 import { cityBackdropLightState, createCityBackdropPlan } from './modules/city-backdrop.js?v=20260908-1';
 import { observedWaterLevelDelta, waterObservationPresentation } from './modules/water-observation.js?v=20260908-1';
-import { shouldRecalculateRoute } from './modules/route-recalculation.js?v=20260908-1';
+import { shouldRecalculateRoute } from './modules/route-recalculation.js?v=20260911-1';
 import { cableSagOffset, createUrbanUtilityPlan } from './modules/urban-utilities.js?v=20260908-1';
 import {
   createShelterArrivalZone,
@@ -4563,10 +4563,10 @@ function confirmRoadClosureRoute() {
 }
 
 function currentMissionGoal() {
-  if (!missionHazardChecked || missionReachShelterDone) return null;
+  if (!missionHazardChecked) return null;
   if (!missionCheckpointDone) return checkpointPosition;
   if (!missionHelpNpcDone) return nextNpcToHelp()?.group.position || shelterApproachPoint();
-  return shelterApproachPoint();
+  return missionReachShelterDone ? null : shelterApproachPoint();
 }
 
 function currentMissionGoalKey() {
@@ -5016,8 +5016,6 @@ function poseNpcShelterCelebration() {
 function completeMissionReachShelter() {
   if (
     missionReachShelterDone
-    || !missionHazardChecked
-    || !missionCheckpointDone
     || !missionHelpNpcDone
     || !allRescuedPeopleAtShelter()
   ) return;
@@ -5040,7 +5038,26 @@ function updateMissionGuidance() {
     return;
   }
 
+  const checkpointDistance = Math.hypot(
+    checkpointPosition.x - player.position.x,
+    checkpointPosition.z - player.position.z
+  );
+  if (!missionCheckpointDone && checkpointDistance < 2.2) {
+    completeCheckpointMission();
+  }
+  const playerAtShelter = missionHelpNpcDone && isInsideShelterArrivalZone(
+    player.position,
+    shelterArrivalZone,
+    shelterArrivalZone.playerRadius
+  );
+  const waitingForEscort = playerAtShelter && !allRescuedPeopleAtShelter();
+  if (!missionReachShelterDone && playerAtShelter && !waitingForEscort) {
+    completeMissionReachShelter();
+  }
+  checkTrainingComplete();
+
   const goal = currentMissionGoal();
+  if (!goal && missionHazardChecked) return;
   if (!goal) {
     guidanceBanner.classList.remove('is-hidden');
     guidanceArrow.textContent = 'H';
@@ -5055,21 +5072,8 @@ function updateMissionGuidance() {
   const dz = goal.z - player.position.z;
   const distance = Math.hypot(dx, dz);
 
-  if (missionHazardChecked && !missionCheckpointDone && distance < 2.2) {
-    completeCheckpointMission();
-  }
-  const playerAtShelter = missionHelpNpcDone && isInsideShelterArrivalZone(
-    player.position,
-    shelterArrivalZone,
-    shelterArrivalZone.playerRadius
-  );
-  const waitingForEscort = playerAtShelter && !allRescuedPeopleAtShelter();
-  if (!missionReachShelterDone && missionHazardChecked && missionCheckpointDone && playerAtShelter && !waitingForEscort) {
-    completeMissionReachShelter();
-  }
-
   guidanceBanner.classList.remove('is-hidden');
-  if (!missionReachShelterDone) {
+  if (goal) {
     guidanceArrow.textContent = '⬆';
     // 1 Three.js unit = 1 metre (see mapConfig), so distance is already in
     // metres - no unit conversion needed, just round for display.
@@ -6480,10 +6484,6 @@ function animateNpcRig(npc, dt, moving, playerNearby, now) {
 function tryHelpNpc() {
   const npc = nearestUnrescuedNpc();
   if (!characterChosen || !npc || npcDistanceFromPlayer(npc) > NPC_HELP_RADIUS_METERS) return;
-  if (!missionHazardChecked || !missionCheckpointDone) {
-    showNpcToast('先にハザードマップを確認し、安全ルートのチェックポイントへ向かいましょう。', 3200);
-    return;
-  }
   npc.rescued = true;
   npc.rescuedOrder = rescuedPeopleTotal() - 1;
   npc.acknowledgeUntil = performance.now() + 1500;
@@ -6529,8 +6529,7 @@ function updateNpcInteraction(dt) {
   const nearbyNpc = nearestUnrescuedNpc();
   if (nearbyNpc) {
     const inRange = npcDistanceFromPlayer(nearbyNpc) <= NPC_HELP_RADIUS_METERS;
-    const canHelp = missionHazardChecked && missionCheckpointDone;
-    setInteractionPrompt(inRange, canHelp ? `${nearbyNpc.label}に声をかける` : '先に安全ルートを確認しよう');
+    setInteractionPrompt(inRange, `${nearbyNpc.label}に声をかける`);
   } else {
     setInteractionPrompt(false);
   }
