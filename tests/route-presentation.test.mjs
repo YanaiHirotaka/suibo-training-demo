@@ -33,8 +33,8 @@ test('無効または短すぎる経路では矢印を生成しない', () => {
 test('流れる発光値は描画に安全な範囲に収まる', () => {
   for (const time of [0, 0.5, 4, 100]) {
     const state = routePulseState(time, 12);
-    assert.ok(state.intensity >= 0.7 && state.intensity <= 1);
-    assert.ok(state.scale >= 0.92 && state.scale <= 1.02);
-    assert.ok(state.heightOffset >= 0.006 && state.heightOffset <= 0.024);
+    assert.ok(state.intensity >= 0.76 && state.intensity <= 1);
+    assert.ok(state.scale >= 1.08 && state.scale <= 1.2);
+    assert.ok(state.heightOffset >= 0.025 && state.heightOffset <= 0.06);
   }
 });

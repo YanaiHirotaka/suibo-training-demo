@@ -1,7 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { resolveThirdPersonCamera, yawTowardPoint } from '../modules/camera-geometry.js';
+import {
+  resolveThirdPersonCamera,
+  thirdPersonCameraComposition,
+  yawTowardPoint
+} from '../modules/camera-geometry.js';
+
+test('画面比率に合わせてプレイヤーと進行方向が見えるカメラ構図を選ぶ', () => {
+  const landscape = thirdPersonCameraComposition({ width: 1680, height: 945 });
+  const portrait = thirdPersonCameraComposition({ width: 390, height: 844, touch: true });
+  assert.ok(landscape.distance >= 5.8);
+  assert.ok(landscape.lookAhead > 1.2);
+  assert.ok(portrait.distance > landscape.distance);
+  assert.ok(portrait.shoulderOffset < landscape.shoulderOffset);
+  assert.ok(portrait.fov > landscape.fov);
+});
 
 test('目的地点へ向くヨー角を計算する', () => {
   assert.ok(Math.abs(yawTowardPoint({ x: 0, z: 0 }, { x: 0, z: -5 })) < 1e-8);

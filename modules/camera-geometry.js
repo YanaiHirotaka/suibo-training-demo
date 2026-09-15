@@ -4,6 +4,22 @@ export function yawTowardPoint(from, to) {
   return Math.atan2(-(to.x - from.x), -(to.z - from.z));
 }
 
+export function thirdPersonCameraComposition({ width = 1280, height = 720, touch = false } = {}) {
+  const safeWidth = Math.max(1, Number(width) || 1280);
+  const safeHeight = Math.max(1, Number(height) || 720);
+  const compact = safeWidth / safeHeight < 1 || safeWidth < 720;
+  return {
+    fov: compact ? 59 : 56,
+    distance: compact ? 6 : 5.8,
+    pitch: compact ? 0.32 : 0.31,
+    shoulderOffset: compact ? 0.24 : 0.42,
+    lookAhead: compact ? 1.08 : 1.28,
+    lookUp: compact ? 0.26 : 0.24,
+    minimumDistance: touch || compact ? 3.6 : 3.8,
+    maximumDistance: compact ? 8.5 : 9
+  };
+}
+
 function containsPoint(box, x, z) {
   return x > box.minX && x < box.maxX && z > box.minZ && z < box.maxZ;
 }

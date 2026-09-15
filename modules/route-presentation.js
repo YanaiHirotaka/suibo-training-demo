@@ -59,9 +59,9 @@ export function routePulseState(timeSeconds, distanceMeters = 0) {
   const wave = (Math.sin(time * 4.6 - distance * 1.15) + 1) / 2;
 
   return {
-    intensity: 0.7 + wave * 0.3,
-    scale: 0.92 + wave * 0.1,
-    heightOffset: 0.006 + wave * 0.018,
-    markerScale: 0.94 + wave * 0.1
+    intensity: 0.76 + wave * 0.24,
+    scale: 1.08 + wave * 0.12,
+    heightOffset: 0.025 + wave * 0.035,
+    markerScale: 0.98 + wave * 0.12
   };
 }

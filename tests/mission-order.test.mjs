@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
+import { canCompleteShelter, isWithinMissionRadius } from '../modules/mission-state.js';
 
 const source = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
 const functionSource = (name) => source.match(new RegExp(`function ${name}\\([^]*?\\n\\}`))[0];
@@ -18,6 +19,7 @@ test('ハザード未確認でもチェックポイント通過を記録し、�
     minimapGoal: element(), minimapGoalLine: element(),
     showNpcToast: noop, showTrainingAdvice: noop, updateMissionProgress: noop,
     checkTrainingComplete: noop, currentMissionGoal: () => null,
+    isWithinMissionRadius,
   });
   vm.runInContext(functionSource('completeCheckpointMission') + functionSource('updateMissionGuidance'), context);
   vm.runInContext('updateMissionGuidance()', context);
@@ -49,6 +51,7 @@ test('全員到着は他のミッションと独立して記録するが、同�
     missionHelpNpcDone: true, allRescuedPeopleAtShelter: () => false,
     missionReachShelter: element(), guidanceArrow: {}, guidanceBanner: element(), guidanceDistance: {},
     poseNpcShelterCelebration: noop, updateMissionProgress: noop, checkTrainingComplete: noop,
+    canCompleteShelter,
   });
   vm.runInContext(functionSource('completeMissionReachShelter'), context);
   vm.runInContext('completeMissionReachShelter()', context);

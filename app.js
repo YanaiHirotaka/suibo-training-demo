@@ -41,7 +41,11 @@ import {
 import { cityReliefHeightBlocks } from './modules/terrain-elevation.js?v=20260902-1';
 import { weatherVisualState } from './modules/atmosphere.js?v=20260908-2';
 import { escortFormationTarget, roleMotionProfile } from './modules/character-motion.js?v=20260904-1';
-import { resolveThirdPersonCamera, yawTowardPoint } from './modules/camera-geometry.js?v=20260908-1';
+import {
+  resolveThirdPersonCamera,
+  thirdPersonCameraComposition,
+  yawTowardPoint
+} from './modules/camera-geometry.js?v=20260915-2';
 import { successPresentationState } from './modules/completion-presentation.js?v=20260908-1';
 import { floodSurfaceVisualState, wadingEffectState } from './modules/water-effects.js?v=20260908-1';
 import { routePulseState, sampleRoutePolyline } from './modules/route-presentation.js?v=20260908-1';
@@ -54,6 +58,15 @@ import {
   createShelterArrivalZone,
   isInsideShelterArrivalZone
 } from './modules/shelter-arrival.js?v=20260908-1';
+import {
+  MISSION_GOAL,
+  canCompleteShelter,
+  isTrainingMissionComplete,
+  isWithinMissionRadius,
+  missionGoalKey,
+  missionGoalKind,
+  missionProgressState
+} from './modules/mission-state.js?v=20260915-1';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -508,7 +521,12 @@ const stormSkyColor = new THREE.Color(0x607d91);
 const clearFogColor = new THREE.Color(0xbce5f5);
 const stormFogColor = new THREE.Color(0x7f9baa);
 
-const camera = new THREE.PerspectiveCamera(54, innerWidth / innerHeight, 0.05, 220);
+const initialCameraComposition = thirdPersonCameraComposition({
+  width: innerWidth,
+  height: innerHeight,
+  touch: matchMedia('(hover: none) and (pointer: coarse)').matches
+});
+const camera = new THREE.PerspectiveCamera(initialCameraComposition.fov, innerWidth / innerHeight, 0.05, 220);
 const mobileRenderProfile = matchMedia('(hover: none) and (pointer: coarse)').matches;
 const initialPixelRatioLimit = mobileRenderProfile ? 1.25 : 1.75;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -4563,18 +4581,15 @@ function confirmRoadClosureRoute() {
 }
 
 function currentMissionGoal() {
-  if (!missionHazardChecked) return null;
-  if (!missionCheckpointDone) return checkpointPosition;
-  if (!missionHelpNpcDone) return nextNpcToHelp()?.group.position || shelterApproachPoint();
-  return missionReachShelterDone ? null : shelterApproachPoint();
+  const kind = missionGoalKind(currentMissionState());
+  if (kind === MISSION_GOAL.CHECKPOINT) return checkpointPosition;
+  if (kind === MISSION_GOAL.HELPER) return nextNpcToHelp()?.group.position || shelterApproachPoint();
+  if (kind === MISSION_GOAL.SHELTER) return shelterApproachPoint();
+  return null;
 }
 
 function currentMissionGoalKey() {
-  if (!missionHazardChecked) return 'hazard';
-  if (!missionCheckpointDone) return 'checkpoint';
-  if (!missionHelpNpcDone) return `helper:${nextNpcToHelp()?.id || 'none'}`;
-  if (!missionReachShelterDone) return 'shelter';
-  return 'complete';
+  return missionGoalKey(currentMissionState(), nextNpcToHelp()?.id);
 }
 
 function shelterApproachPoint() {
@@ -4775,7 +4790,7 @@ function renderSafeRoute() {
   minimapSafeRoute.setAttribute('opacity', '0.95');
 
   safeRouteArrowSamples = sampleRoutePolyline(safeRoutePoints, {
-    spacing: mobileRenderProfile ? 1.18 : 0.96,
+    spacing: mobileRenderProfile ? 1.08 : 0.84,
     startOffset: 0.44,
     endPadding: 0.34
   });
@@ -4853,7 +4868,7 @@ function updateSafeRouteArrowHeights(now = performance.now()) {
       safeRouteArrowRotation.setFromEuler(safeRouteArrowEuler);
 
       safeRouteArrowPosition.set(sample.x, routeSurfaceY - 0.008, sample.z);
-      safeRouteArrowScale.set(pulse.scale * 1.28, 1, pulse.scale * 1.28);
+      safeRouteArrowScale.set(pulse.scale * 1.52, 1, pulse.scale * 1.52);
       safeRouteArrowMatrix.compose(
         safeRouteArrowPosition,
         safeRouteArrowRotation,
@@ -4866,7 +4881,7 @@ function updateSafeRouteArrowHeights(now = performance.now()) {
       );
 
       safeRouteArrowPosition.y = routeSurfaceY;
-      safeRouteArrowScale.set(pulse.scale, 1, pulse.scale);
+      safeRouteArrowScale.set(pulse.scale * 1.16, 1, pulse.scale * 1.16);
       safeRouteArrowMatrix.compose(
         safeRouteArrowPosition,
         safeRouteArrowRotation,
@@ -4938,6 +4953,15 @@ let missionHazardChecked = false;
 let missionCheckpointDone = false;
 let missionReachShelterDone = false;
 
+function currentMissionState() {
+  return {
+    hazardChecked: missionHazardChecked,
+    checkpointDone: missionCheckpointDone,
+    helpDone: missionHelpNpcDone,
+    shelterDone: missionReachShelterDone
+  };
+}
+
 const missionStages = [
   { element: missionInspectHazard, isComplete: () => missionHazardChecked },
   { element: missionReachCheckpoint, isComplete: () => missionCheckpointDone },
@@ -4947,12 +4971,15 @@ const missionStages = [
 ];
 
 function updateMissionProgress() {
-  const activeStages = missionStages.filter((stage) => stage.element && (!stage.isActive || stage.isActive()));
-  const complete = activeStages.filter((stage) => stage.isComplete()).length;
-  missionProgress.textContent = `${complete}/${activeStages.length}`;
-  const currentStage = activeStages.find((stage) => !stage.isComplete());
-  missionStages.forEach((stage) => {
-    stage.element.classList.toggle('is-current', activeStages.includes(stage) && stage === currentStage);
+  const progress = missionProgressState(missionStages.map((stage, index) => ({
+    id: index,
+    exists: Boolean(stage.element),
+    active: !stage.isActive || stage.isActive(),
+    complete: stage.isComplete()
+  })));
+  missionProgress.textContent = `${progress.complete}/${progress.total}`;
+  missionStages.forEach((stage, index) => {
+    stage.element?.classList.toggle('is-current', progress.currentId === index);
   });
 }
 
@@ -4970,7 +4997,12 @@ function completeCheckpointMission() {
   missionCheckpointDone = true;
   missionReachCheckpoint.classList.add('is-done');
   checkpointMarker.visible = false;
-  showNpcToast('チェックポイントを通過しました。近くの人を助けましょう。', 3600);
+  showNpcToast(
+    missionHazardChecked
+      ? 'チェックポイントを通過しました。近くの人を助けましょう。'
+      : 'チェックポイントを通過しました。ハザードマップも確認しましょう。',
+    3600
+  );
   showTrainingAdvice('checkpoint', '周囲の人にも声かけを', '自分だけで避難せず、近くに支援が必要な人がいないか確認しましょう。', 'info', 6500, 0);
   updateMissionProgress();
 }
@@ -5014,11 +5046,11 @@ function poseNpcShelterCelebration() {
 }
 
 function completeMissionReachShelter() {
-  if (
-    missionReachShelterDone
-    || !missionHelpNpcDone
-    || !allRescuedPeopleAtShelter()
-  ) return;
+  if (!canCompleteShelter({
+    alreadyComplete: missionReachShelterDone,
+    helpDone: missionHelpNpcDone,
+    allAtShelter: allRescuedPeopleAtShelter()
+  })) return;
   missionReachShelterDone = true;
   missionReachShelter.classList.add('is-done');
   guidanceArrow.textContent = '✓';
@@ -5038,11 +5070,7 @@ function updateMissionGuidance() {
     return;
   }
 
-  const checkpointDistance = Math.hypot(
-    checkpointPosition.x - player.position.x,
-    checkpointPosition.z - player.position.z
-  );
-  if (!missionCheckpointDone && checkpointDistance < 2.2) {
+  if (!missionCheckpointDone && isWithinMissionRadius(player.position, checkpointPosition, 2.2)) {
     completeCheckpointMission();
   }
   const playerAtShelter = missionHelpNpcDone && isInsideShelterArrivalZone(
@@ -6814,11 +6842,11 @@ function showTrainingFailure() {
 function checkTrainingComplete() {
   if (
     trainingCompleteShown
-    || !missionHazardChecked
-    || !missionCheckpointDone
-    || (roadClosureActive && !roadClosureRouteConfirmed)
-    || !missionHelpNpcDone
-    || !missionReachShelterDone
+    || !isTrainingMissionComplete({
+      ...currentMissionState(),
+      detourActive: roadClosureActive,
+      detourConfirmed: roadClosureRouteConfirmed
+    })
   ) return;
   trainingCompleteShown = true;
   clearTrainingProgress();
@@ -7149,11 +7177,11 @@ function pruneStaleKeys(now) {
     }
   }
 }
-const INITIAL_CAMERA_PITCH = 0.26;
-const INITIAL_CAMERA_DISTANCE = 4.1;
-const CAMERA_SHOULDER_OFFSET = 0.34;
-const CAMERA_LOOK_AHEAD = 0.92;
-const CAMERA_LOOK_UP = 0.22;
+const INITIAL_CAMERA_PITCH = initialCameraComposition.pitch;
+const INITIAL_CAMERA_DISTANCE = initialCameraComposition.distance;
+const CAMERA_SHOULDER_OFFSET = initialCameraComposition.shoulderOffset;
+const CAMERA_LOOK_AHEAD = initialCameraComposition.lookAhead;
+const CAMERA_LOOK_UP = initialCameraComposition.lookUp;
 const CAMERA_COLLISION_RADIUS = 0.2;
 const CAMERA_WALL_CLEARANCE = 0.1;
 const CAMERA_FIELD_MARGIN = 0.18;
@@ -8154,8 +8182,8 @@ canvas.addEventListener('pointermove', (event) => {
       if (lastPinchDistance > 0) {
         cameraDistance = THREE.MathUtils.clamp(
           cameraDistance - (pinchDistance - lastPinchDistance) * 0.012,
-          2.7,
-          8
+          initialCameraComposition.minimumDistance,
+          initialCameraComposition.maximumDistance
         );
       }
       lastPinchDistance = pinchDistance;
@@ -8178,7 +8206,11 @@ canvas.addEventListener('pointermove', (event) => {
 });
 canvas.addEventListener('pointerleave', hideBrushHighlight);
 canvas.addEventListener('wheel', (event) => {
-  cameraDistance = THREE.MathUtils.clamp(cameraDistance + event.deltaY * 0.003, 2.7, 8);
+  cameraDistance = THREE.MathUtils.clamp(
+    cameraDistance + event.deltaY * 0.003,
+    initialCameraComposition.minimumDistance,
+    initialCameraComposition.maximumDistance
+  );
 }, { passive: true });
 
 function setEditMode(enabled) {
