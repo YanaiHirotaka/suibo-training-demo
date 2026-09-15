@@ -40,7 +40,12 @@ import {
 } from './modules/flood-spread.js?v=20260902-3';
 import { cityReliefHeightBlocks } from './modules/terrain-elevation.js?v=20260902-1';
 import { weatherVisualState } from './modules/atmosphere.js?v=20260908-2';
-import { escortFormationTarget, roleMotionProfile } from './modules/character-motion.js?v=20260904-1';
+import {
+  escortCatchUpMultiplier,
+  escortCohesionState,
+  escortFormationTarget,
+  roleMotionProfile
+} from './modules/character-motion.js?v=20260915-2';
 import {
   resolveThirdPersonCamera,
   thirdPersonCameraComposition,
@@ -164,6 +169,9 @@ const trainingStatusPanel = document.querySelector('#trainingStatusPanel');
 const trainingTimeRemaining = document.querySelector('#trainingTimeRemaining');
 const trainingTimeState = document.querySelector('#trainingTimeState');
 const rescuedPeopleCount = document.querySelector('#rescuedPeopleCount');
+const companionPanel = document.querySelector('#companionPanel');
+const companionCohesion = document.querySelector('#companionCohesion');
+const companionPeople = [...document.querySelectorAll('[data-companion]')];
 const evacuationAlert = document.querySelector('#evacuationAlert');
 const evacuationAlertLevel = document.querySelector('#evacuationAlertLevel');
 const evacuationAlertTitle = document.querySelector('#evacuationAlertTitle');
@@ -6354,6 +6362,7 @@ function updateTrainingStatus(now) {
   trainingTimeRemaining.textContent = formatRemainingTime(remainingSeconds);
   trainingTimeState.textContent = expired ? '避難猶予を超過' : warning ? '避難を急いで' : '避難猶予';
   rescuedPeopleCount.textContent = `${rescuedPeopleTotal()}/${npcHelpers.length}`;
+  updateCompanionPanel();
   trainingStatusPanel.classList.toggle('is-warning', warning);
   trainingStatusPanel.classList.toggle('is-expired', expired);
   if (expired && !trainingCompleteShown) showTrainingFailure();
@@ -6539,6 +6548,34 @@ function rescuedPeopleTotal() {
   return npcHelpers.filter((npc) => npc.rescued).length;
 }
 
+function updateCompanionPanel() {
+  const rescued = npcHelpers.filter((npc) => npc.rescued);
+  const distances = rescued.map((npc) => npcDistanceFromPlayer(npc));
+  const cohesion = escortCohesionState(distances);
+  const allRescued = rescued.length === npcHelpers.length;
+
+  companionPeople.forEach((person) => {
+    const npc = npcHelpers.find((candidate) => candidate.id === person.dataset.companion);
+    const distance = npc?.rescued ? npcDistanceFromPlayer(npc) : Number.POSITIVE_INFINITY;
+    person.classList.toggle('is-waiting', !npc?.rescued);
+    person.classList.toggle('is-following', Boolean(npc?.rescued) && distance < 8);
+    person.classList.toggle('is-separated', Boolean(npc?.rescued) && distance >= 8);
+    person.querySelector('small').textContent = !npc?.rescued
+      ? `${npc?.label || ''}・救助待ち`
+      : distance >= 8 ? `${npc.label}・離れています` : `${npc.label}・同行中`;
+  });
+
+  companionPanel.classList.toggle('is-active', rescued.length > 0);
+  companionPanel.classList.toggle('is-separated', cohesion.key === 'separated');
+  companionCohesion.textContent = !rescued.length
+    ? '合流前'
+    : allRescued && cohesion.key === 'together'
+      ? '全員同行中'
+      : cohesion.key === 'separated'
+        ? '離れた人がいます'
+        : `${rescued.length}/${npcHelpers.length}人 同行中`;
+}
+
 function nextNpcToHelp() {
   return npcHelpers.find((npc) => !npc.rescued) || null;
 }
@@ -6685,7 +6722,11 @@ function updateNpcInteraction(dt) {
     const moving = distance > followDistance;
 
     if (moving) {
-      const moveAmount = Math.min(npc.followSpeed * dt, distance - followDistance);
+      const catchUpMultiplier = escortCatchUpMultiplier(distance, npc.type);
+      const moveAmount = Math.min(
+        npc.followSpeed * catchUpMultiplier * dt,
+        distance - followDistance
+      );
       const nextX = npc.group.position.x + (dx / distance) * moveAmount;
       const nextZ = npc.group.position.z + (dz / distance) * moveAmount;
       if (!isInsideRoadClosure(nextX, nextZ)) {

@@ -10,7 +10,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon.svg">
-  <link rel="stylesheet" href="./styles.css?v=20260915-4">
+  <link rel="stylesheet" href="./styles.css?v=20260915-5">
 </head>
 <body>
   <canvas id="game" aria-label="水防訓練フィールド"></canvas>
@@ -103,6 +103,27 @@
       </div>
     </div>
     <p class="flood-forecast" id="floodForecast">水位は安定しています</p>
+  </aside>
+
+  <aside class="companion-panel" id="companionPanel" aria-label="一緒に避難している人">
+    <header>
+      <span>一緒に避難している人</span>
+      <strong id="companionCohesion">合流前</strong>
+    </header>
+    <div class="companion-list">
+      <div class="companion-person is-waiting" data-companion="elderly">
+        <span class="companion-portrait is-elderly" aria-hidden="true">高</span>
+        <small>高齢者</small>
+      </div>
+      <div class="companion-person is-waiting" data-companion="child">
+        <span class="companion-portrait is-child" aria-hidden="true">子</span>
+        <small>子ども</small>
+      </div>
+      <div class="companion-person is-waiting" data-companion="resident">
+        <span class="companion-portrait is-resident" aria-hidden="true">住</span>
+        <small>住民</small>
+      </div>
+    </div>
   </aside>
 
   <div class="water-danger-vignette" id="waterDangerVignette" aria-hidden="true"></div>
@@ -409,6 +430,6 @@
     </div>
   </div>
 
-  <script type="module" src="./app.js?v=20260915-4"></script>
+  <script type="module" src="./app.js?v=20260915-5"></script>
 </body>
 </html>

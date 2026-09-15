@@ -1,9 +1,9 @@
-const CACHE_NAME = 'suibo-training-v78';
+const CACHE_NAME = 'suibo-training-v79';
 const APP_ASSETS = [
   './',
   './index.html',
-  './styles.css?v=20260915-4',
-  './app.js?v=20260915-4',
+  './styles.css?v=20260915-5',
+  './app.js?v=20260915-5',
   './modules/time.js?v=20260901-22',
   './modules/storage.js?v=20260901-24',
   './modules/editor-storage.js?v=20260901-29',
@@ -12,7 +12,7 @@ const APP_ASSETS = [
   './modules/flood-spread.js?v=20260902-3',
   './modules/terrain-elevation.js?v=20260902-1',
   './modules/atmosphere.js?v=20260908-2',
-  './modules/character-motion.js?v=20260904-1',
+  './modules/character-motion.js?v=20260915-2',
   './modules/camera-geometry.js?v=20260915-2',
   './modules/completion-presentation.js?v=20260908-1',
   './modules/water-effects.js?v=20260915-2',

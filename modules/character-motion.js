@@ -22,3 +22,23 @@ export function escortFormationTarget(target, index, baseFollowDistance = 1.3) {
     followDistance: baseFollowDistance + safeIndex * 0.18
   };
 }
+
+export function escortCohesionState(distances, warningDistance = 5.5, separatedDistance = 8) {
+  const safeDistances = Array.isArray(distances)
+    ? distances.map((distance) => Math.max(0, Number(distance) || 0))
+    : [];
+  const furthestDistance = safeDistances.length ? Math.max(...safeDistances) : 0;
+  const nearbyCount = safeDistances.filter((distance) => distance <= warningDistance).length;
+  const key = furthestDistance >= separatedDistance
+    ? 'separated'
+    : furthestDistance > warningDistance ? 'warning' : 'together';
+
+  return { key, furthestDistance, nearbyCount, totalCount: safeDistances.length };
+}
+
+export function escortCatchUpMultiplier(distanceMeters, role = 'resident') {
+  const distance = Math.max(0, Number(distanceMeters) || 0);
+  const roleLimit = role === 'elderly' ? 1.28 : role === 'child' ? 1.5 : 1.42;
+  if (distance <= 3.5) return 1;
+  return Math.min(roleLimit, 1 + (distance - 3.5) * 0.075);
+}
