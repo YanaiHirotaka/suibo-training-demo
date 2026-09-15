@@ -26,6 +26,30 @@ export function floodSurfaceVisualState(weatherIntensity, floodProgress, timeSec
   };
 }
 
+export function floodDepthVisualState(depthMeters, maximumDepthMeters = 3) {
+  const maximum = Math.max(0.1, Number(maximumDepthMeters) || 3);
+  const depth = Math.max(0, Number(depthMeters) || 0);
+  const depthAmount = clamp01(depth / maximum);
+
+  return {
+    depthAmount,
+    opacityBoost: lerp(-0.05, 0.09, depthAmount),
+    deepColorMix: lerp(0.08, 0.92, depthAmount),
+    foamOpacity: lerp(0.28, 0.62, clamp01(depth / 0.65))
+  };
+}
+
+export function floodRiskState(levelMeters, maximumLevelMeters = 3) {
+  const maximum = Math.max(0.1, Number(maximumLevelMeters) || 3);
+  const ratio = clamp01((Number(levelMeters) || 0) / maximum);
+  const thresholdRatio = ratio + Number.EPSILON * 8;
+
+  if (thresholdRatio >= 0.78) return { key: 'danger', label: '氾濫危険', ratio };
+  if (thresholdRatio >= 0.48) return { key: 'warning', label: '避難判断', ratio };
+  if (thresholdRatio >= 0.2) return { key: 'watch', label: '氾濫注意', ratio };
+  return { key: 'normal', label: '平常', ratio };
+}
+
 export function wadingEffectState(floodDepthMeters, movementSpeed, mobile = false) {
   const depth = Math.max(0, Number(floodDepthMeters) || 0);
   const speed = Math.max(0, Number(movementSpeed) || 0);

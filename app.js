@@ -47,7 +47,12 @@ import {
   yawTowardPoint
 } from './modules/camera-geometry.js?v=20260915-2';
 import { successPresentationState } from './modules/completion-presentation.js?v=20260908-1';
-import { floodSurfaceVisualState, wadingEffectState } from './modules/water-effects.js?v=20260908-1';
+import {
+  floodDepthVisualState,
+  floodRiskState,
+  floodSurfaceVisualState,
+  wadingEffectState
+} from './modules/water-effects.js?v=20260915-2';
 import { routePulseState, sampleRoutePolyline } from './modules/route-presentation.js?v=20260908-1';
 import { shelterLandmarkState } from './modules/shelter-landmark.js?v=20260908-1';
 import { cityBackdropLightState, createCityBackdropPlan } from './modules/city-backdrop.js?v=20260908-1';
@@ -151,6 +156,8 @@ const floodValue = document.querySelector('#floodValue');
 const floodGaugeFill = document.querySelector('#floodGaugeFill');
 const floodForecast = document.querySelector('#floodForecast');
 const floodPanel = document.querySelector('#floodPanel');
+const floodRisk = document.querySelector('#floodRisk');
+const waterDangerVignette = document.querySelector('#waterDangerVignette');
 const healthBarFill = document.querySelector('#healthBarFill');
 const healthText = document.querySelector('#healthText');
 const trainingStatusPanel = document.querySelector('#trainingStatusPanel');
@@ -5167,7 +5174,17 @@ const floodTileMaterial = new THREE.MeshBasicMaterial({
   side: THREE.DoubleSide
 });
 let floodSurfaceBands = [];
+let floodFoamBands = [];
 let floodConnectivity = null;
+
+const floodFoamGeometry = new THREE.BoxGeometry(tileSize * 0.72, 0.012, tileSize * 0.045);
+const floodFoamBaseMaterial = new THREE.MeshBasicMaterial({
+  color: 0xeaffff,
+  transparent: true,
+  opacity: 0.42,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending
+});
 
 function isFloodableTile(blockX, blockZ) {
   if (blockX < 0 || blockX >= tilesWide || blockZ < 0 || blockZ >= tilesDeep) return false;
@@ -5249,6 +5266,7 @@ function rebuildFloodSurfaceTiles() {
     { length: FLOOD_ARRIVAL_BAND_COUNT },
     () => Number.POSITIVE_INFINITY
   );
+  const foamByBand = Array.from({ length: FLOOD_ARRIVAL_BAND_COUNT }, () => []);
   let cellCount = 0;
   let protectedCellCount = 0;
   for (let z = 0; z < tilesDeep; z += 1) {
@@ -5261,15 +5279,33 @@ function rebuildFloodSurfaceTiles() {
       }
       const bandIndex = floodArrivalBandIndex(arrivalRatio, FLOOD_ARRIVAL_BAND_COUNT);
       cellsByBand[bandIndex].push([x, z]);
+      const exposedEdges = [
+        [0, -1, 0, -0.47], [1, 0, 0.47, 0],
+        [0, 1, 0, 0.47], [-1, 0, -0.47, 0]
+      ];
+      exposedEdges.forEach(([dx, dz, offsetX, offsetZ], edgeIndex) => {
+        if (isFloodableTile(x + dx, z + dz)) return;
+        if (mobileRenderProfile && ((x * 13 + z * 7 + edgeIndex) % 2)) return;
+        foamByBand[bandIndex].push([x, z, offsetX, offsetZ, dx !== 0]);
+      });
       arrivalByBand[bandIndex] = Math.min(arrivalByBand[bandIndex], arrivalRatio);
       cellCount += 1;
     }
   }
-  floodSurfaceBands.forEach(({ mesh }) => scene.remove(mesh));
+  floodSurfaceBands.forEach(({ mesh, material }) => {
+    scene.remove(mesh);
+    material.dispose();
+  });
+  floodFoamBands.forEach(({ mesh, material }) => {
+    scene.remove(mesh);
+    material.dispose();
+  });
   floodSurfaceBands = [];
+  floodFoamBands = [];
   cellsByBand.forEach((cells, bandIndex) => {
     if (!cells.length) return;
-    const mesh = new THREE.InstancedMesh(floodTileGeometry, floodTileMaterial, cells.length);
+    const material = floodTileMaterial.clone();
+    const mesh = new THREE.InstancedMesh(floodTileGeometry, material, cells.length);
     mesh.name = `TerrainFloodSurfaceBand${bandIndex}`;
     cells.forEach(([x, z], index) => {
       tileMatrix.makeRotationY(((x * 7 + z * 11) % 4) * Math.PI / 2);
@@ -5281,13 +5317,38 @@ function rebuildFloodSurfaceTiles() {
     scene.add(mesh);
     floodSurfaceBands.push({
       mesh,
+      material,
       arrivalRatio: arrivalByBand[bandIndex]
     });
+    const foamCells = foamByBand[bandIndex];
+    if (foamCells.length) {
+      const foamMaterial = floodFoamBaseMaterial.clone();
+      const foamMesh = new THREE.InstancedMesh(floodFoamGeometry, foamMaterial, foamCells.length);
+      foamMesh.name = `TerrainFloodFoamBand${bandIndex}`;
+      foamCells.forEach(([x, z, offsetX, offsetZ, rotate], index) => {
+        tileMatrix.makeRotationY(rotate ? Math.PI / 2 : 0);
+        tileMatrix.setPosition(
+          worldXFromBlock(x + 0.5 + offsetX),
+          0,
+          worldZFromBlock(z + 0.5 + offsetZ)
+        );
+        foamMesh.setMatrixAt(index, tileMatrix);
+      });
+      foamMesh.instanceMatrix.needsUpdate = true;
+      foamMesh.renderOrder = 7;
+      scene.add(foamMesh);
+      floodFoamBands.push({
+        mesh: foamMesh,
+        material: foamMaterial,
+        arrivalRatio: arrivalByBand[bandIndex]
+      });
+    }
   });
   updateFloodSurfaceBands();
   canvas.dataset.floodSurfaceTileCount = String(cellCount);
   canvas.dataset.floodSurfaceBandCount = String(floodSurfaceBands.length);
   canvas.dataset.floodProtectedTileCount = String(protectedCellCount);
+  canvas.dataset.floodFoamEdgeCount = String(foamByBand.reduce((sum, cells) => sum + cells.length, 0));
 }
 
 function updateFloodSurfaceBands() {
@@ -5298,6 +5359,11 @@ function updateFloodSurfaceBands() {
     mesh.position.y = localLevel - 0.012;
     mesh.visible = localLevel > 0.02;
     if (mesh.visible) visibleBandCount += 1;
+  });
+  floodFoamBands.forEach(({ mesh, arrivalRatio }) => {
+    const localLevel = localFloodLevelMeters(floodWaterLevel, maxLevel, arrivalRatio);
+    mesh.position.y = localLevel + 0.012;
+    mesh.visible = localLevel > 0.02;
   });
   canvas.dataset.floodVisibleBandCount = String(visibleBandCount);
 }
@@ -5506,8 +5572,31 @@ function updateWaterEffects(now) {
     : 0;
   const visual = floodSurfaceVisualState(weatherIntensity, floodProgress, now / 1000);
   floodSurfaceTexture.offset.set(visual.textureOffsetX, visual.textureOffsetY);
-  floodTileMaterial.opacity = visual.opacity;
-  floodTileMaterial.color.lerpColors(calmFloodColor, stormFloodColor, visual.deepColorMix);
+  floodSurfaceBands.forEach(({ material, arrivalRatio }) => {
+    const localLevel = localFloodLevelMeters(
+      floodWaterLevel,
+      activeScenario.flood.maxLevelMeters,
+      arrivalRatio
+    );
+    const depthVisual = floodDepthVisualState(localLevel, activeScenario.flood.maxLevelMeters);
+    material.opacity = THREE.MathUtils.clamp(visual.opacity + depthVisual.opacityBoost, 0.5, 0.9);
+    material.color.lerpColors(
+      calmFloodColor,
+      stormFloodColor,
+      Math.max(visual.deepColorMix, depthVisual.deepColorMix)
+    );
+  });
+  floodFoamBands.forEach(({ material, arrivalRatio }) => {
+    const localLevel = localFloodLevelMeters(
+      floodWaterLevel,
+      activeScenario.flood.maxLevelMeters,
+      arrivalRatio
+    );
+    material.opacity = floodDepthVisualState(
+      localLevel,
+      activeScenario.flood.maxLevelMeters
+    ).foamOpacity;
+  });
   wetRoadSheenMaterial.opacity *= visual.roadSheenPulse;
 
   if (characterChosen) {
@@ -5544,6 +5633,10 @@ function updateFloodLevel(dt) {
 
   floodValue.textContent = floodWaterLevel.toFixed(1);
   floodGaugeFill.style.height = `${Math.min(100, (floodWaterLevel / maxLevel) * 100).toFixed(1)}%`;
+  const risk = floodRiskState(floodWaterLevel, maxLevel);
+  floodRisk.textContent = risk.label;
+  floodRisk.className = `flood-risk is-${risk.key}`;
+  floodPanel.dataset.risk = risk.key;
   floodForecast.textContent = !floodRisingEnabled
     ? '上昇を一時停止中'
     : floodWaterLevel >= maxLevel ? '浸水可能域が最高水位に到達' : '川からつながる低地へ拡大中';
@@ -5744,6 +5837,17 @@ function updateFloodDanger(dt) {
   const inWarning = !drowning && playerFloodDepth() > FLOOD_WARNING_DEPTH_METERS;
 
   floodPanel.classList.toggle('is-danger', drowning);
+  const playerDepth = playerFloodDepth();
+  const dangerAmount = THREE.MathUtils.clamp(
+    playerDepth / (PLAYER_NOSE_HEIGHT_METERS + 0.2),
+    0,
+    1
+  );
+  waterDangerVignette.style.opacity = dangerAmount > 0.08
+    ? String(0.16 + dangerAmount * 0.5)
+    : '0';
+  waterDangerVignette.classList.toggle('is-warning', inWarning);
+  waterDangerVignette.classList.toggle('is-danger', drowning);
 
   if (drowning) {
     playerHealth = Math.max(0, playerHealth - HEALTH_DRAIN_PER_SEC * dt);

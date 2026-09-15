@@ -1,9 +1,9 @@
-const CACHE_NAME = 'suibo-training-v77';
+const CACHE_NAME = 'suibo-training-v78';
 const APP_ASSETS = [
   './',
   './index.html',
-  './styles.css?v=20260915-3',
-  './app.js?v=20260915-3',
+  './styles.css?v=20260915-4',
+  './app.js?v=20260915-4',
   './modules/time.js?v=20260901-22',
   './modules/storage.js?v=20260901-24',
   './modules/editor-storage.js?v=20260901-29',
@@ -15,7 +15,7 @@ const APP_ASSETS = [
   './modules/character-motion.js?v=20260904-1',
   './modules/camera-geometry.js?v=20260915-2',
   './modules/completion-presentation.js?v=20260908-1',
-  './modules/water-effects.js?v=20260908-1',
+  './modules/water-effects.js?v=20260915-2',
   './modules/route-presentation.js?v=20260915-1',
   './modules/shelter-landmark.js?v=20260908-1',
   './modules/city-backdrop.js?v=20260908-1',

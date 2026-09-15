@@ -2,9 +2,28 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  floodDepthVisualState,
+  floodRiskState,
   floodSurfaceVisualState,
   wadingEffectState
 } from '../modules/water-effects.js';
+
+test('深い浸水ほど水面を濃くし岸際の泡を強くする', () => {
+  const shallow = floodDepthVisualState(0.1, 3);
+  const deep = floodDepthVisualState(2.5, 3);
+
+  assert.ok(deep.opacityBoost > shallow.opacityBoost);
+  assert.ok(deep.deepColorMix > shallow.deepColorMix);
+  assert.ok(deep.foamOpacity > shallow.foamOpacity);
+});
+
+test('水位比率から防災上の危険度を判定する', () => {
+  assert.equal(floodRiskState(0.1, 3).key, 'normal');
+  assert.equal(floodRiskState(0.6, 3).key, 'watch');
+  assert.equal(floodRiskState(1.44, 3).key, 'warning');
+  assert.equal(floodRiskState(2.34, 3).key, 'danger');
+  assert.equal(floodRiskState(9, 3).ratio, 1);
+});
 
 test('水位が上がるほど浸水面を濃く表示する', () => {
   const early = floodSurfaceVisualState(0.5, 0.1, 1);

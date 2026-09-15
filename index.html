@@ -10,7 +10,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon.svg">
-  <link rel="stylesheet" href="./styles.css?v=20260915-3">
+  <link rel="stylesheet" href="./styles.css?v=20260915-4">
 </head>
 <body>
   <canvas id="game" aria-label="水防訓練フィールド"></canvas>
@@ -90,16 +90,22 @@
     <div class="flood-body">
       <div class="flood-gauge">
         <div class="flood-gauge-fill" id="floodGaugeFill"></div>
+        <span class="flood-threshold is-danger" style="--level: 78%" aria-label="氾濫危険水位"></span>
+        <span class="flood-threshold is-warning" style="--level: 48%" aria-label="避難判断水位"></span>
+        <span class="flood-threshold is-watch" style="--level: 20%" aria-label="氾濫注意水位"></span>
       </div>
       <div class="flood-gauge-ticks">
         <span>3.0</span><span>2.0</span><span>1.0</span><span>0.0</span>
       </div>
       <div class="flood-readout">
         <span class="flood-value" id="floodValue">0.0</span><span class="flood-unit">m</span>
+        <strong class="flood-risk is-normal" id="floodRisk">平常</strong>
       </div>
     </div>
     <p class="flood-forecast" id="floodForecast">水位は安定しています</p>
   </aside>
+
+  <div class="water-danger-vignette" id="waterDangerVignette" aria-hidden="true"></div>
 
   <div class="guidance-banner is-hidden" id="guidanceBanner">
     <span class="guidance-arrow" id="guidanceArrow">⬆</span>
@@ -403,6 +409,6 @@
     </div>
   </div>
 
-  <script type="module" src="./app.js?v=20260915-3"></script>
+  <script type="module" src="./app.js?v=20260915-4"></script>
 </body>
 </html>
