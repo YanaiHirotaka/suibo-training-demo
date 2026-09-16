@@ -31,7 +31,7 @@ test('避難所完了には救助と全員到着が必要', () => {
   assert.equal(canCompleteShelter({ alreadyComplete: true, helpDone: true, allAtShelter: true }), false);
 });
 
-test('任意ミッションを含む進捗と訓練完了を計算する', () => {
+test('任意表示を含む進捗と必須ミッション完了を計算する', () => {
   assert.deepEqual(missionProgressState([
     { id: 'hazard', complete: true },
     { id: 'checkpoint', complete: false },
@@ -45,6 +45,5 @@ test('任意ミッションを含む進捗と訓練完了を計算する', () =>
     shelterDone: true
   };
   assert.equal(isTrainingMissionComplete(completeState), true);
-  assert.equal(isTrainingMissionComplete({ ...completeState, detourActive: true }), false);
-  assert.equal(isTrainingMissionComplete({ ...completeState, detourActive: true, detourConfirmed: true }), true);
+  assert.equal(isTrainingMissionComplete({ ...completeState, detourActive: true }), true);
 });

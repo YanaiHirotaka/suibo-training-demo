@@ -76,7 +76,8 @@ import {
   missionGoalKey,
   missionGoalKind,
   missionProgressState
-} from './modules/mission-state.js?v=20260915-1';
+} from './modules/mission-state.js?v=20260916-1';
+import { lowRoadEventState } from './modules/disaster-events.js?v=20260916-1';
 
 const canvas = document.querySelector('#game');
 const guide = document.querySelector('#startGuide');
@@ -148,7 +149,6 @@ const minimapGoal = document.querySelector('#minimapGoal');
 const minimapGoalLine = document.querySelector('#minimapGoalLine');
 const missionInspectHazard = document.querySelector('#missionInspectHazard');
 const missionReachCheckpoint = document.querySelector('#missionReachCheckpoint');
-const missionConfirmDetour = document.querySelector('#missionConfirmDetour');
 const missionHelpNpc = document.querySelector('#missionHelpNpc');
 const missionReachShelter = document.querySelector('#missionReachShelter');
 const missionProgress = document.querySelector('#missionProgress');
@@ -172,6 +172,10 @@ const rescuedPeopleCount = document.querySelector('#rescuedPeopleCount');
 const companionPanel = document.querySelector('#companionPanel');
 const companionCohesion = document.querySelector('#companionCohesion');
 const companionPeople = [...document.querySelectorAll('[data-companion]')];
+const eventStatus = document.querySelector('#eventStatus');
+const eventStatusLabel = document.querySelector('#eventStatusLabel');
+const eventStatusDetail = document.querySelector('#eventStatusDetail');
+const eventStatusProgress = document.querySelector('#eventStatusProgress');
 const evacuationAlert = document.querySelector('#evacuationAlert');
 const evacuationAlertLevel = document.querySelector('#evacuationAlertLevel');
 const evacuationAlertTitle = document.querySelector('#evacuationAlertTitle');
@@ -4472,20 +4476,23 @@ let safeRouteForceRecalculation = false;
 let safeRouteRecalculationCount = 0;
 
 // The low road between the elderly person and the child closes at alert
-// level 3. The blocked footprint spans the full 15-block road plus a small
-// shoulder, forcing the route search to use the higher ground on either side.
+// level 3. Only its eastern side closes, preserving a forward evacuation lane.
 const ROAD_CLOSURE_BOUNDS = Object.freeze({
-  minBlockX: 169 + CITY_LAYOUT_SHIFT_BLOCKS,
+  // Close only the eastern side of the low road. The western lane remains a
+  // forward route, so this event never cuts off the evacuation corridor.
+  minBlockX: 179 + CITY_LAYOUT_SHIFT_BLOCKS,
   maxBlockX: 187 + CITY_LAYOUT_SHIFT_BLOCKS,
   minBlockZ: 146,
   maxBlockZ: 151
 });
 let roadClosureActive = false;
 let roadClosureRouteConfirmed = false;
+let roadClosureSkipped = false;
 const roadClosureGroup = new THREE.Group();
 roadClosureGroup.name = 'LowRoadClosure';
 roadClosureGroup.visible = false;
 scene.add(roadClosureGroup);
+const roadClosureBeacons = [];
 
 function buildRoadClosureBarricade() {
   const centerBlockX = (ROAD_CLOSURE_BOUNDS.minBlockX + ROAD_CLOSURE_BOUNDS.maxBlockX) / 2;
@@ -4521,6 +4528,34 @@ function buildRoadClosureBarricade() {
     }
   }
 
+  const beaconBaseMaterial = new THREE.MeshStandardMaterial({ color: 0x2b3036, roughness: 0.7 });
+  const beaconLightMaterial = new THREE.MeshStandardMaterial({
+    color: 0xff3f35,
+    emissive: 0xff1f18,
+    emissiveIntensity: 1.4,
+    roughness: 0.28
+  });
+  for (const side of [-1, 1]) {
+    const beacon = new THREE.Group();
+    beacon.position.set(centerX + side * (width / 2 - 0.28), groundY + 1.06, centerZ);
+    const base = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.11, 0.14, 0.1, 12),
+      beaconBaseMaterial
+    );
+    const light = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.09, 0.1, 0.16, 12),
+      beaconLightMaterial.clone()
+    );
+    light.position.y = 0.12;
+    beacon.add(base, light);
+    roadClosureGroup.add(beacon);
+    roadClosureBeacons.push({
+      group: beacon,
+      material: light.material,
+      phase: side > 0 ? Math.PI : 0
+    });
+  }
+
   const signTexture = createSignTexture((ctx, widthPx, heightPx) => {
     ctx.fillStyle = '#b72f26';
     ctx.fillRect(0, 0, widthPx, heightPx);
@@ -4553,11 +4588,19 @@ function isInsideRoadClosure(x, z) {
 }
 
 function activateRoadClosure() {
-  if (roadClosureActive) return;
+  if (roadClosureActive || roadClosureSkipped) return;
+  const playerBlockZ = blockZFromWorld(player.position.z);
+  if (playerBlockZ <= ROAD_CLOSURE_BOUNDS.maxBlockZ + 2) {
+    roadClosureSkipped = true;
+    roadClosureRouteConfirmed = true;
+    updateDisasterEventStatus();
+    showNpcToast('低地道路は通過済みです。そのまま避難所へ進んでください。', 3600);
+    return;
+  }
   roadClosureActive = true;
+  roadClosureRouteConfirmed = true;
   roadClosureGroup.visible = true;
   minimapRoadClosure.setAttribute('opacity', '1');
-  missionConfirmDetour?.classList.remove('is-hidden');
   updateHazardToggleLabel();
   safeRouteGoalKey = '';
   safeRouteRecalculateTimer = 0;
@@ -4568,31 +4611,34 @@ function activateRoadClosure() {
     { frequency: 460, duration: 0.18, volume: 0.18 },
     { frequency: 620, duration: 0.24, volume: 0.17 }
   ]);
-  showNpcToast('低地道路が冠水し、通行止めになりました。', 4200);
+  showNpcToast('低地道路の東側車線が冠水しました。西側をそのまま進めます。', 4200);
   showTrainingAdvice(
     'low-road-closed',
-    '低地道路が通行止めです',
-    'バリケードを越えず、更新された緑の矢印を確認して高い場所へ迂回してください。',
+    '低地道路の東側車線が通行止めです',
+    '後戻りは不要です。西側の開いている安全ルートをそのまま進んでください。',
     'warning', 9000, 0
   );
 }
 
-function confirmRoadClosureRoute() {
-  if (!roadClosureActive || roadClosureRouteConfirmed) return;
-  roadClosureRouteConfirmed = true;
-  missionConfirmDetour?.classList.add('is-done');
-  updateHazardToggleLabel();
-  safeRouteGoalKey = '';
-  safeRouteRecalculateTimer = 0;
-  safeRouteForceRecalculation = true;
-  updateMissionProgress();
-  showNpcToast('更新された安全ルートを確認しました。', 3400);
-  showTrainingAdvice(
-    'detour-confirmed',
-    '迂回ルートを確認しました',
-    '赤い通行止め表示を避け、緑の矢印に沿って高い場所を進みましょう。',
-    'info', 6500, 0
-  );
+function updateDisasterEventStatus() {
+  const floodProgress = activeScenario.flood.maxLevelMeters > 0
+    ? floodWaterLevel / activeScenario.flood.maxLevelMeters
+    : 0;
+  const state = lowRoadEventState(floodProgress, roadClosureActive, roadClosureSkipped);
+  eventStatus.className = `event-status is-${state.key}`;
+  eventStatusLabel.textContent = state.label;
+  eventStatusDetail.textContent = state.detail;
+  eventStatusProgress.style.width = `${(state.approachRatio * 100).toFixed(1)}%`;
+  canvas.dataset.lowRoadEventState = state.key;
+}
+
+function updateRoadClosureEffects(now) {
+  if (!roadClosureActive) return;
+  roadClosureBeacons.forEach(({ group, material, phase }) => {
+    const pulse = Math.sin(now * 0.009 + phase) * 0.5 + 0.5;
+    material.emissiveIntensity = 0.8 + pulse * 2.8;
+    group.scale.setScalar(0.94 + pulse * 0.1);
+  });
 }
 
 function currentMissionGoal() {
@@ -4980,7 +5026,6 @@ function currentMissionState() {
 const missionStages = [
   { element: missionInspectHazard, isComplete: () => missionHazardChecked },
   { element: missionReachCheckpoint, isComplete: () => missionCheckpointDone },
-  { element: missionConfirmDetour, isActive: () => roadClosureActive, isComplete: () => roadClosureRouteConfirmed },
   { element: missionHelpNpc, isComplete: () => missionHelpNpcDone },
   { element: missionReachShelter, isComplete: () => missionReachShelterDone }
 ];
@@ -5649,6 +5694,7 @@ function updateFloodLevel(dt) {
     ? '上昇を一時停止中'
     : floodWaterLevel >= maxLevel ? '浸水可能域が最高水位に到達' : '川からつながる低地へ拡大中';
   updateWaterObservationPoint();
+  updateDisasterEventStatus();
 }
 
 const EVACUATION_LEVELS = [
@@ -6868,7 +6914,6 @@ function trainingFailureFeedback() {
   const feedback = [];
   if (!missionHazardChecked) feedback.push('開始後すぐにハザードマップを開き、安全な方向を確認しましょう。');
   else if (!missionCheckpointDone) feedback.push('安全ルートの矢印をたどり、チェックポイントへ早めに向かいましょう。');
-  if (roadClosureActive && !roadClosureRouteConfirmed) feedback.push('通行止めが発生したら、ハザードマップを開き直して更新された迂回ルートを確認しましょう。');
   if (!missionHelpNpcDone) feedback.push(`救助できたのは${rescuedPeopleTotal()}/${npcHelpers.length}人です。支援が必要な人へ順番に声をかけましょう。`);
   else if (!missionReachShelterDone) feedback.push('同行者との距離を保ちながら、全員で避難所の入口まで到着しましょう。');
   feedback.push('警戒レベルが低いうちに行動を始めることが、避難時間の確保につながります。');
@@ -6987,11 +7032,7 @@ function showTrainingFailure() {
 function checkTrainingComplete() {
   if (
     trainingCompleteShown
-    || !isTrainingMissionComplete({
-      ...currentMissionState(),
-      detourActive: roadClosureActive,
-      detourConfirmed: roadClosureRouteConfirmed
-    })
+    || !isTrainingMissionComplete(currentMissionState())
   ) return;
   trainingCompleteShown = true;
   clearTrainingProgress();
@@ -7194,7 +7235,6 @@ function restoreTrainingProgress(progress) {
   missionReachCheckpoint.classList.toggle('is-done', missionCheckpointDone);
   missionHelpNpc.classList.toggle('is-done', missionHelpNpcDone);
   missionReachShelter.classList.toggle('is-done', missionReachShelterDone);
-  missionConfirmDetour?.classList.toggle('is-done', roadClosureRouteConfirmed);
   checkpointMarker.visible = !missionCheckpointDone;
   if (missionHazardChecked) setHazardMapVisible(true);
   renderInventory();
@@ -8902,6 +8942,7 @@ function animate(now) {
     updateShelterLandmark(now);
     updateCityBackdrop(now);
     updateWaterObservationAnimation(now);
+    updateRoadClosureEffects(now);
   }
   renderer.render(scene, camera);
 
@@ -8962,9 +9003,7 @@ function buildHazardOverlay() {
 
 let hazardMapVisible = false;
 function updateHazardToggleLabel() {
-  hazardToggle.textContent = roadClosureActive && !roadClosureRouteConfirmed
-    ? 'ルート再確認'
-    : hazardMapVisible ? 'ハザード非表示' : 'ハザード表示';
+  hazardToggle.textContent = hazardMapVisible ? 'ハザード非表示' : 'ハザード表示';
 }
 
 function setHazardMapVisible(visible) {
@@ -8983,17 +9022,11 @@ function setMapExpanded(expanded) {
   mapExpandToggle.innerHTML = expanded ? '地図を閉じる <kbd>M</kbd>' : '地図拡大 <kbd>M</kbd>';
   if (expanded) {
     setHazardMapVisible(true);
-    confirmRoadClosureRoute();
   }
 }
 
 mapExpandToggle.addEventListener('click', () => setMapExpanded(!mapExpanded));
 hazardToggle.addEventListener('click', () => {
-  if (roadClosureActive && !roadClosureRouteConfirmed) {
-    setHazardMapVisible(true);
-    confirmRoadClosureRoute();
-    return;
-  }
   setHazardMapVisible(!hazardMapVisible);
 });
 // --------------------------------------------------------------------------

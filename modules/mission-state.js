@@ -36,16 +36,13 @@ export function isTrainingMissionComplete({
   hazardChecked,
   checkpointDone,
   helpDone,
-  shelterDone,
-  detourActive = false,
-  detourConfirmed = false
+  shelterDone
 }) {
   return Boolean(
     hazardChecked
     && checkpointDone
     && helpDone
     && shelterDone
-    && (!detourActive || detourConfirmed)
   );
 }
 

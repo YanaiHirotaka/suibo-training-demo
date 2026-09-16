@@ -736,6 +736,79 @@ body {
 .guidance-info strong { font-size: 13px; font-weight: 900; }
 .guidance-info span { font-size: 11px; color: #cdeed7; font-weight: 700; }
 
+.event-status {
+  position: fixed;
+  top: 82px;
+  left: 50%;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px;
+  width: 260px;
+  padding: 7px 10px 10px;
+  color: white;
+  background: rgba(9, 42, 61, 0.92);
+  border: 2px solid rgba(98, 194, 230, 0.78);
+  border-radius: 8px;
+  box-shadow: var(--hud-shadow);
+  transform: translateX(-50%);
+  transition: opacity 180ms ease, border-color 180ms ease;
+  pointer-events: none;
+}
+
+.event-status.is-hidden { opacity: 0; }
+
+.event-status-light {
+  width: 10px;
+  height: 10px;
+  background: #62c2e6;
+  border: 2px solid rgba(255, 255, 255, 0.78);
+  border-radius: 50%;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.event-status-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.event-status-copy strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.event-status-copy small { color: #b9dce9; font-size: 8px; font-weight: 800; }
+
+.event-status-progress {
+  position: absolute;
+  right: 8px;
+  bottom: 4px;
+  left: 8px;
+  height: 3px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 2px;
+}
+
+.event-status-progress span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: #62c2e6;
+  transition: width 180ms linear, background 180ms ease;
+}
+
+.event-status.is-imminent { border-color: #ffb04f; }
+.event-status.is-imminent .event-status-light,
+.event-status.is-imminent .event-status-progress span { color: #ffb04f; background: #ffb04f; }
+.event-status.is-imminent .event-status-light { animation: statusWarningPulse 0.8s infinite; }
+.event-status.is-active { border-color: #ff5d68; }
+.event-status.is-active .event-status-light,
+.event-status.is-active .event-status-progress span { color: #ff5d68; background: #ff5d68; }
+.event-status.is-active .event-status-light { animation: dangerPulse 0.7s infinite; }
+.event-status.is-passed { border-color: #72f09a; }
+.event-status.is-passed .event-status-light,
+.event-status.is-passed .event-status-progress span { color: #72f09a; background: #72f09a; }
+
 @media (min-width: 1000px) and (min-height: 700px) {
   .fps-counter { top: 18px; left: 18px; }
   .mission-panel { top: 72px; left: 18px; width: 330px; }
@@ -1098,6 +1171,7 @@ body {
 
 @media (max-width: 700px) {
   .companion-panel { display: none; }
+  .event-status { display: none; }
   .minimap-panel { top: 10px; right: 10px; width: 190px; }
   .minimap-panel header { padding: 7px 10px; font-size: 13px; }
   .minimap-map { height: 160px; }
